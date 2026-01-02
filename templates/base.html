@@ -13,6 +13,7 @@
       :root {
         --header-height: 75px;
         --sidebar-width: 260px;
+        --sidebar-top-gap: 10px;
         /* Bootstrap-aligned blue theme */
         --primary-blue: #0d6efd;
         --primary-dark: #0a58ca;
@@ -121,10 +122,10 @@
       /* Sidebar */
       .app-sidebar {
         position: fixed;
-        top: var(--header-height);
+        top: calc(var(--header-height) + var(--sidebar-top-gap));
         left: 0;
         width: var(--sidebar-width);
-        height: calc(100vh - var(--header-height));
+        height: calc(100vh - var(--header-height) - var(--sidebar-top-gap));
         background: var(--sidebar-bg);
         overflow-y: auto;
         z-index: 1020;
@@ -291,12 +292,10 @@
       </div>
 
       <div class="logo-section">
-        <img
-          src="{% static 'images/jambas-logo-white.svg' %}"
-          onerror="this.onerror=null;this.src='{% static 'images/jambas-company-logo.png' %}';"
-          alt="Jambas Imaging"
-          class="logo-img"
-        />
+        <picture>
+          <source srcset="{% static 'images/jambas-logo-white.svg' %}" type="image/svg+xml" />
+          <img src="{% static 'images/jambas-company-logo.png' %}" alt="Jambas Imaging" class="logo-img" />
+        </picture>
         <div class="system-name">Business Management Portal</div>
       </div>
 

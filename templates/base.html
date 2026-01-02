@@ -13,7 +13,7 @@
       :root {
         --header-height: 75px;
         --sidebar-width: 200px;
-        --sidebar-top-gap: 30px;
+        --sidebar-top-gap: 1px;
         /* Bootstrap-aligned blue theme */
         --primary-blue: #0880f9;
         --primary-dark: #0880f9;
@@ -46,7 +46,7 @@
         display: flex;
         align-items: center;
         padding: 0 1.25rem;
-        gap: 1rem;
+        justify-content: space-between;
         color: white;
       }
 
@@ -55,6 +55,8 @@
         align-items: center;
         gap: 0.75rem;
         flex: 0 0 auto;
+        position: relative;
+        z-index: 2;
       }
 
       .app-header .logo-img {
@@ -75,14 +77,18 @@
       }
 
       .app-header .header-title {
-        flex: 1 1 auto;
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
         text-align: center;
+        width: min(760px, calc(100% - 520px));
         font-size: 1.1rem;
         font-weight: 700;
         letter-spacing: -0.3px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        z-index: 1;
       }
 
       .app-header .header-right {
@@ -91,15 +97,17 @@
         justify-content: flex-end;
         gap: 1rem;
         flex: 0 0 auto;
+        position: relative;
+        z-index: 2;
       }
 
       .app-header .datetime-display {
         display: flex;
         align-items: center;
-        background: rgba(255,255,255,0.15);
-        padding: 0.35rem 0.75rem;
-        border-radius: 8px;
-        backdrop-filter: blur(10px);
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+        backdrop-filter: none;
         gap: 0.5rem;
       }
 
@@ -316,10 +324,10 @@
           <source srcset="{% static 'images/jambas-logo-white.svg' %}" type="image/svg+xml" />
           <img src="{% static 'images/jambas-company-logo.png' %}" alt="Jambas Imaging" class="logo-img" />
         </picture>
-        <div class="company-name">JAMBAS IMAGING (U) LTD</div>
+        <div class="company-name"></div>
       </div>
 
-      <div class="header-title">Jambas Imaging Business Management Portal</div>
+      <div class="header-title"> Jambas Imaging Business Management Portal</div>
 
       <div class="header-right">
         <div class="datetime-display">

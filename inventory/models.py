@@ -1,6 +1,7 @@
 from decimal import Decimal
+import uuid
 
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 
@@ -60,6 +61,11 @@ class ProductCategory(models.Model):
 		return self.name
 
 
+class ProductSequence(models.Model):
+	year = models.PositiveIntegerField(unique=True)
+	last_number = models.PositiveIntegerField(default=0)
+
+
 class Product(models.Model):
 	branch = models.ForeignKey(
 		"core.Branch",
@@ -69,7 +75,7 @@ class Product(models.Model):
 		related_name="products",
 	)
 
-	sku = models.CharField(max_length=60, unique=True)
+	sku = models.CharField(max_length=60, unique=True, blank=True)
 	name = models.CharField(max_length=255)
 	category = models.ForeignKey(ProductCategory, on_delete=models.PROTECT, related_name="products")
 	supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
@@ -91,6 +97,24 @@ class Product(models.Model):
 
 	def __str__(self):
 		return f"{self.sku} - {self.name}"
+
+	def _next_sku(self) -> str:
+		year = timezone.localdate().year
+		with transaction.atomic():
+			seq, _ = ProductSequence.objects.select_for_update().get_or_create(year=year)
+			seq.last_number += 1
+			seq.save(update_fields=["last_number"])
+			return f"SKU-{year}-{seq.last_number:05d}"
+
+	def save(self, *args, **kwargs):
+		if not (self.sku or "").strip():
+			try:
+				self.sku = self._next_sku()
+			except Exception:
+				# Fallback that stays unique even if sequence locking isn't available.
+				stamp = timezone.now().strftime("%Y%m%d%H%M%S")
+				self.sku = f"SKU-{stamp}-{uuid.uuid4().hex[:6].upper()}"
+		super().save(*args, **kwargs)
 
 
 class StockMovement(models.Model):

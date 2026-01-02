@@ -15,6 +15,8 @@ class ProductForm(forms.ModelForm):
 
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
+		if "sku" in self.fields:
+			self.fields["sku"].required = False
 		# Helpful numeric input hints
 		for name in ("unit_price", "stock_quantity", "low_stock_threshold"):
 			if name in self.fields:

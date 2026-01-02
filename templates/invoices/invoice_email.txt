@@ -1,0 +1,12 @@
+Hello {{ invoice.client }},
+
+Please find your invoice {{ invoice.number }} attached as a PDF.
+
+Total: {{ invoice.currency }} {{ invoice.total }}
+Outstanding balance: {{ invoice.currency }} {{ invoice.outstanding_balance }}
+
+Prepared by: {{ invoice.prepared_by_name|default:invoice.created_by.email|default:"-" }}
+Signed by: {{ invoice.signed_by_name|default:"-" }}
+
+Thank you,
+Jambas Imaging

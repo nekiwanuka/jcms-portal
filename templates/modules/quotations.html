@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+
+{% block title %}Quotations | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Quotations</h1>
+      <div class="text-muted">Prepare quotations, track approvals, and convert to invoices.</div>
+    </div>
+    <a href="{% url 'add_quotation' %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Create Quote</a>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="small text-muted">Draft</div><div class="h5 mb-0">{{ counts.draft|default:0 }}</div></div></div></div>
+    <div class="col-12 col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="small text-muted">Sent</div><div class="h5 mb-0">{{ counts.sent|default:0 }}</div></div></div></div>
+    <div class="col-12 col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="small text-muted">Approved</div><div class="h5 mb-0">{{ counts.approved|default:0 }}</div></div></div></div>
+    <div class="col-12 col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="small text-muted">Expired</div><div class="h5 mb-0">{{ counts.expired|default:0 }}</div></div></div></div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-12 col-md-4">
+          <label class="form-label">Search</label>
+          <input class="form-control" name="q" value="{{ filters.q }}" placeholder="Quote number or client" />
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Status</label>
+          <select class="form-select" name="status">
+            <option value="">All</option>
+            {% for v,l in status_choices %}
+              <option value="{{ v }}" {% if filters.status == v %}selected{% endif %}>{{ l }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Category</label>
+          <select class="form-select" name="category">
+            <option value="">All</option>
+            {% for v,l in category_choices %}
+              <option value="{{ v }}" {% if filters.category == v %}selected{% endif %}>{{ l }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Branch</label>
+          <select class="form-select" name="branch">
+            <option value="">All</option>
+            {% for b in branches %}
+              <option value="{{ b.id }}" {% if filters.branch == b.id|stringformat:'s' %}selected{% endif %}>{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-1 d-grid">
+          <button class="btn btn-outline-primary" type="submit">Filter</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-striped table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Quote</th>
+            <th>Client</th>
+            <th>Category</th>
+            <th>Total</th>
+            <th>Valid Until</th>
+            <th>Status</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for q in quotations %}
+            <tr>
+              <td class="fw-semibold">{{ q.number }}</td>
+              <td>{{ q.client }}</td>
+              <td>{{ q.category_label }}</td>
+              <td>{{ q.currency }} {{ q.total_amount|floatformat:2 }}</td>
+              <td>{{ q.valid_until|date:'Y-m-d'|default:'-' }}</td>
+              <td><span class="badge {{ q.badge_class }}">{{ q.get_status_display }}</span></td>
+              <td class="text-end">
+                <a class="btn btn-outline-primary btn-sm" href="{% url 'quotation_detail' q.id %}"><i class="bi bi-eye"></i> View</a>
+                {% if q.status == 'accepted' and not q.invoice_id %}
+                  <form method="post" action="{% url 'convert_quotation_to_invoice' q.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <button class="btn btn-success btn-sm" type="submit"><i class="bi bi-arrow-right-circle"></i> Convert</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="7" class="text-center text-muted py-4">No quotations found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}

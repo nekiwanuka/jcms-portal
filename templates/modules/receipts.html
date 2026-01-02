@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+
+{% block title %}Receipts | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Receipts</h1>
+      <div class="text-muted">Receipts are generated per payment (latest first).</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'dashboard' %}">Back</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'documents_archive' %}"><i class="bi bi-folder2-open"></i> Documents</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Date</th>
+              <th>Receipt #</th>
+              <th>Invoice</th>
+              <th>Client</th>
+              <th>Method</th>
+              <th class="text-end">Amount</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in payments %}
+              <tr>
+                <td>{{ p.paid_at|date:"Y-m-d H:i" }}</td>
+                <td class="fw-semibold">{{ p.receipt_number|default:p.id }}</td>
+                <td>
+                  <a href="{% url 'invoice_detail' p.invoice.id %}">{{ p.invoice.number }}</a>
+                </td>
+                <td>{{ p.invoice.client }}</td>
+                <td>{{ p.method_label }}</td>
+                <td class="text-end">{{ p.invoice.currency }} {{ p.amount }}</td>
+                <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm" href="{% url 'payment_receipt_pdf' p.invoice.id p.id %}">PDF</a>
+                  {% if p.archived_receipt_doc %}
+                    <a class="btn btn-outline-secondary btn-sm" href="{% url 'download_document' p.archived_receipt_doc.id %}" title="Download archived receipt"><i class="bi bi-archive"></i></a>
+                  {% endif %}
+                  <form method="post" action="{% url 'send_payment_receipt' p.invoice.id p.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-success btn-sm" type="submit">Send</button>
+                  </form>
+                </td>
+              </tr>
+              {% if p.reference or p.notes %}
+                <tr class="table-light">
+                  <td colspan="7" class="small text-muted">
+                    {% if p.reference %}<div><span class="fw-semibold">Ref:</span> {{ p.reference }}</div>{% endif %}
+                    {% if p.notes %}<div><span class="fw-semibold">Notes:</span> {{ p.notes }}</div>{% endif %}
+                  </td>
+                </tr>
+              {% endif %}
+            {% empty %}
+              <tr><td colspan="7" class="text-center text-muted py-4">No receipts yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+
+{% block title %}Invoices | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Invoices</h1>
+      <div class="text-muted">Create and track invoices and payments.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'export_invoices_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
+      <a href="{% url 'export_invoices_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
+      <a href="{% url 'add_invoice' %}" class="btn btn-primary btn-sm">+ New Invoice</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-12 col-md-4">
+          <label class="form-label small text-muted mb-1">Search</label>
+          <input name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Invoice # or client" />
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label small text-muted mb-1">Branch</label>
+          <select name="branch" class="form-select form-select-sm">
+            <option value="">All branches</option>
+            {% for b in branches %}
+              <option value="{{ b.id }}" {% if filters.branch == b.id|stringformat:"s" %}selected{% endif %}>{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-2">
+          <label class="form-label small text-muted mb-1">Status</label>
+          <select name="status" class="form-select form-select-sm">
+            <option value="">All</option>
+            {% for value,label in status_choices %}
+              <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-1">
+          <label class="form-label small text-muted mb-1">Issued from</label>
+          <input type="date" name="issued_from" value="{{ filters.issued_from }}" class="form-control form-control-sm" />
+        </div>
+        <div class="col-6 col-md-1">
+          <label class="form-label small text-muted mb-1">Issued to</label>
+          <input type="date" name="issued_to" value="{{ filters.issued_to }}" class="form-control form-control-sm" />
+        </div>
+        <div class="col-12 col-md-1 d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+          <a href="{% url 'invoices' %}" class="btn btn-outline-secondary btn-sm w-100">Reset</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Total</div>
+          <div class="h4 mb-0">{{ invoices_total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Draft</div>
+          <div class="h4 mb-0">{{ invoices_draft }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Issued</div>
+          <div class="h4 mb-0">{{ invoices_issued }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Paid</div>
+          <div class="h4 mb-0">{{ invoices_paid }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="fw-semibold">Recent Invoices</div>
+        <span class="text-muted small">Showing latest 50</span>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Invoice #</th>
+              <th>Client</th>
+              <th>Status</th>
+              <th class="d-none d-md-table-cell">Issued</th>
+              <th class="d-none d-md-table-cell">Due</th>
+              <th class="text-end">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in invoices %}
+              <tr>
+                <td class="fw-semibold"><a href="{% url 'invoice_detail' inv.id %}" class="text-decoration-none">{{ inv.number }}</a></td>
+                <td>{{ inv.client }}</td>
+                <td>
+                  {% if inv.status == 'paid' %}
+                    <span class="badge text-bg-success">Paid</span>
+                  {% elif inv.status == 'issued' %}
+                    <span class="badge text-bg-primary">Issued</span>
+                  {% elif inv.status == 'cancelled' %}
+                    <span class="badge text-bg-danger">Cancelled</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary">Draft</span>
+                  {% endif %}
+                </td>
+                <td class="d-none d-md-table-cell">{{ inv.issued_at|date:"Y-m-d"|default:"-" }}</td>
+                <td class="d-none d-md-table-cell">{{ inv.due_at|date:"Y-m-d"|default:"-" }}</td>
+                <td class="text-end">{{ inv.created_at|date:"Y-m-d" }}</td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">No invoices found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

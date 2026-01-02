@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <body style="font-family: Arial, sans-serif;">
+    <p>Hello {{ invoice.client }},</p>
+    <p>Please find your invoice <strong>{{ invoice.number }}</strong> attached as a PDF.</p>
+    <p>
+      <strong>Total:</strong> {{ invoice.currency }} {{ invoice.total }}<br />
+      <strong>Outstanding balance:</strong> {{ invoice.currency }} {{ invoice.outstanding_balance }}
+    </p>
+    <p>
+      <strong>Prepared by:</strong> {{ invoice.prepared_by_name|default:invoice.created_by.email|default:"-" }}<br />
+      <strong>Signed by:</strong> {{ invoice.signed_by_name|default:"-" }}
+    </p>
+    <p>Thank you,<br />Jambas Imaging</p>
+  </body>
+</html>

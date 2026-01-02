@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+
+{% block title %}Clients | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Clients</h1>
+      <div class="text-muted">View and manage client records.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'export_clients_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
+      <a href="{% url 'export_clients_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
+      <a href="{% url 'add_client' %}" class="btn btn-primary btn-sm">+ Add Client</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-12 col-md-4">
+          <label class="form-label small text-muted mb-1">Search</label>
+          <input name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Name, phone, email, TIN/NIN" />
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label small text-muted mb-1">Branch</label>
+          <select name="branch" class="form-select form-select-sm">
+            <option value="">All branches</option>
+            {% for b in branches %}
+              <option value="{{ b.id }}" {% if filters.branch == b.id|stringformat:"s" %}selected{% endif %}>{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small text-muted mb-1">Type</label>
+          <select name="client_type" class="form-select form-select-sm">
+            <option value="">All</option>
+            {% for value,label in client_type_choices %}
+              <option value="{{ value }}" {% if filters.client_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small text-muted mb-1">Status</label>
+          <select name="status" class="form-select form-select-sm">
+            <option value="">All</option>
+            {% for value,label in status_choices %}
+              <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-1 d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+          <a href="{% url 'clients' %}" class="btn btn-outline-secondary btn-sm w-100">Reset</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Total Clients</div>
+          <div class="h4 mb-0">{{ clients_total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Active</div>
+          <div class="h4 mb-0">{{ clients_active }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Prospects</div>
+          <div class="h4 mb-0">{{ clients_prospect }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="fw-semibold">Recent Clients</div>
+        <span class="text-muted small">Showing latest 50</span>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th class="d-none d-md-table-cell">Phone</th>
+              <th class="d-none d-lg-table-cell">Email</th>
+              <th class="text-end">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in clients %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ c.company_name|default:c.full_name|default:"Client" }}</div>
+                  {% if c.contact_person %}<div class="text-muted small">{{ c.contact_person }}</div>{% endif %}
+                </td>
+                <td><span class="badge text-bg-secondary">{{ c.get_client_type_display }}</span></td>
+                <td>
+                  {% if c.status == 'active' %}
+                    <span class="badge text-bg-success">Active</span>
+                  {% else %}
+                    <span class="badge text-bg-warning">Prospect</span>
+                  {% endif %}
+                </td>
+                <td class="d-none d-md-table-cell">{{ c.phone|default:"-" }}</td>
+                <td class="d-none d-lg-table-cell">{{ c.email|default:"-" }}</td>
+                <td class="text-end">{{ c.created_at|date:"Y-m-d" }}</td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">No clients found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

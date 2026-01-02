@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+
+{% block title %}Inventory | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Inventory</h1>
+      <div class="text-muted">Products, categories, suppliers, and stock levels.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'export_inventory_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
+        <a href="{% url 'export_inventory_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
+      <a href="{% url 'add_inventory' %}" class="btn btn-primary btn-sm">+ Add Product</a>
+    </div>
+  </div>
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+          <div class="col-12 col-md-3">
+            <label class="form-label small text-muted mb-1">Search</label>
+            <input name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="SKU or name" />
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small text-muted mb-1">Branch</label>
+            <select name="branch" class="form-select form-select-sm">
+              <option value="">All branches</option>
+              {% for b in branches %}
+                <option value="{{ b.id }}" {% if filters.branch == b.id|stringformat:"s" %}selected{% endif %}>{{ b.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small text-muted mb-1">Category</label>
+            <select name="category" class="form-select form-select-sm">
+              <option value="">All</option>
+              {% for c in categories %}
+                <option value="{{ c.id }}" {% if filters.category == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label small text-muted mb-1">Supplier</label>
+            <select name="supplier" class="form-select form-select-sm">
+              <option value="">All</option>
+              {% for s in suppliers %}
+                <option value="{{ s.id }}" {% if filters.supplier == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label small text-muted mb-1">Active</label>
+            <select name="is_active" class="form-select form-select-sm">
+              <option value="">All</option>
+              <option value="1" {% if filters.is_active == "1" %}selected{% endif %}>Active</option>
+              <option value="0" {% if filters.is_active == "0" %}selected{% endif %}>Inactive</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-1">
+            <div class="form-check mt-4">
+              <input class="form-check-input" type="checkbox" name="low_stock" value="1" id="lowStock" {% if filters.low_stock %}checked{% endif %}>
+              <label class="form-check-label small" for="lowStock">Low stock</label>
+            </div>
+          </div>
+          <div class="col-12 col-md-1 d-flex gap-2">
+            <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+            <a href="{% url 'inventory' %}" class="btn btn-outline-secondary btn-sm w-100">Reset</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Total Products</div>
+          <div class="h4 mb-0">{{ products_total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Low Stock</div>
+          <div class="h4 mb-0">{{ products_low_stock }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="fw-semibold">Products</div>
+        <span class="text-muted small">Showing latest 50</span>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>SKU</th>
+              <th>Product</th>
+              <th class="d-none d-md-table-cell">Category</th>
+              <th class="d-none d-lg-table-cell">Supplier</th>
+              <th class="text-end">Stock</th>
+              <th class="text-end d-none d-md-table-cell">Low Stock At</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in products %}
+              <tr>
+                <td class="fw-semibold">{{ p.sku }}</td>
+                <td>
+                  <div class="fw-semibold">{{ p.name }}</div>
+                  <div class="text-muted small">{{ p.unit_price|floatformat:2 }} {{ p.unit }}</div>
+                </td>
+                <td class="d-none d-md-table-cell">{{ p.category }}</td>
+                <td class="d-none d-lg-table-cell">{{ p.supplier|default:"-" }}</td>
+                <td class="text-end">{{ p.stock_quantity|floatformat:2 }}</td>
+                <td class="text-end d-none d-md-table-cell">{{ p.low_stock_threshold|floatformat:2 }}</td>
+                <td>
+                  {% if p.is_low_stock %}
+                    <span class="badge text-bg-danger">Low</span>
+                  {% else %}
+                    <span class="badge text-bg-success">OK</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="7" class="text-center text-muted py-4">No products found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

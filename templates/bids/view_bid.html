@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+
+{% block title %}Bid {{ bid.bid_number }} | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Bid {{ bid.bid_number }}</h1>
+      <div class="text-muted">{{ bid.title }}</div>
+    </div>
+    <div class="d-flex gap-2">
+      {% if not bid.is_locked %}
+        <a href="{% url 'edit_bid' bid.id %}" class="btn btn-outline-secondary btn-sm">Edit</a>
+      {% endif %}
+      <a href="{% url 'bids_list' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-lg-8">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white">
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="fw-semibold">Bid Details</div>
+            <span class="badge {{ bid.badge_class }}">{{ bid.get_status_display }}</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <form method="post" action="{% url 'set_bid_status' bid.id 'draft' %}" class="d-inline">
+              {% csrf_token %}
+              <button class="btn btn-outline-warning btn-sm" type="submit">Draft</button>
+            </form>
+            <form method="post" action="{% url 'set_bid_status' bid.id 'submitted' %}" class="d-inline">
+              {% csrf_token %}
+              <button class="btn btn-outline-primary btn-sm" type="submit">Submitted</button>
+            </form>
+            <form method="post" action="{% url 'set_bid_status' bid.id 'under_review' %}" class="d-inline">
+              {% csrf_token %}
+              <button class="btn btn-outline-info btn-sm" type="submit">Under Review</button>
+            </form>
+            <form method="post" action="{% url 'set_bid_status' bid.id 'won' %}" class="d-inline">
+              {% csrf_token %}
+              <button class="btn btn-outline-success btn-sm" type="submit">Won</button>
+            </form>
+            <form method="post" action="{% url 'set_bid_status' bid.id 'lost' %}" class="d-inline">
+              {% csrf_token %}
+              <button class="btn btn-outline-danger btn-sm" type="submit">Lost</button>
+            </form>
+            <form method="post" action="{% url 'set_bid_status' bid.id 'cancelled' %}" class="d-inline">
+              {% csrf_token %}
+              <button class="btn btn-outline-secondary btn-sm" type="submit">Cancelled</button>
+            </form>
+
+            {% if bid.status == 'won' and bid.quotation %}
+              <form method="post" action="{% url 'convert_quotation_to_invoice' bid.quotation.id %}" class="d-inline ms-auto">
+                {% csrf_token %}
+                <button class="btn btn-success btn-sm" type="submit"><i class="bi bi-arrow-right-circle"></i> Convert to Invoice</button>
+              </form>
+            {% endif %}
+          </div>
+
+          <div class="row g-2">
+            <div class="col-12 col-md-6">
+              <div class="text-muted small">Client</div>
+              <div class="fw-semibold">{{ bid.client }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-muted small">Reference Number</div>
+              <div class="fw-semibold">{{ bid.reference_number|default:"-" }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-muted small">Category</div>
+              <div class="fw-semibold">{{ bid.category_label }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-muted small">Bid Amount</div>
+              <div class="fw-semibold">{{ bid.amount }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-muted small">Closing Date</div>
+              <div class="fw-semibold">{{ bid.closing_date|date:"Y-m-d" }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-muted small">Submission Method</div>
+              <div class="fw-semibold">{{ bid.submission_method_label }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-muted small">Tender Reference</div>
+              <div class="fw-semibold">{{ bid.tender_reference|default:"-" }}</div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-muted small">Linked Quotation</div>
+              <div class="fw-semibold">
+                {% if bid.quotation %}
+                  <a class="text-decoration-none" href="{% url 'quotation_detail' bid.quotation.id %}">{{ bid.quotation.number }}</a>
+                  <div class="mt-1">
+                    <a class="btn btn-outline-primary btn-sm" href="{% url 'quotation_pdf' bid.quotation.id %}"><i class="bi bi-filetype-pdf"></i> Quotation PDF</a>
+                  </div>
+                {% else %}
+                  -
+                {% endif %}
+              </div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="text-muted small">Created</div>
+              <div class="fw-semibold">{{ bid.created_at|date:"Y-m-d H:i" }}</div>
+            </div>
+            <div class="col-12">
+              <div class="text-muted small">Notes</div>
+              <div>{{ bid.notes|default:"-"|linebreaksbr }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-4">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white">
+          <div class="fw-semibold">Document</div>
+        </div>
+        <div class="card-body">
+          {% if bid.document %}
+            <div class="mb-2">PDF uploaded.</div>
+            <a class="btn btn-primary btn-sm" href="{{ bid.document.url }}" target="_blank" rel="noopener">Open Document</a>
+          {% else %}
+            <div class="text-muted">No document uploaded.</div>
+          {% endif %}
+        </div>
+      </div>
+
+    <div class="card shadow-sm mt-3">
+    <div class="card-header bg-white">
+      <div class="d-flex align-items-center justify-content-between">
+      <div class="fw-semibold">Compliance / Attachments</div>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'upload_document' %}?client={{ bid.client.id }}&bid={{ bid.id }}"><i class="bi bi-upload"></i> Upload</a>
+      </div>
+    </div>
+    <div class="card-body">
+      {% if documents %}
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+        <thead>
+          <tr>
+          <th>Title</th>
+          <th>Type</th>
+          <th>v</th>
+          <th class="text-end">Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in documents %}
+          <tr>
+            <td>{{ d.title|default:'(Untitled)' }}</td>
+            <td>{{ d.doc_type_label }}</td>
+            <td>{{ d.version }}</td>
+            <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-muted">No compliance documents uploaded.</div>
+      {% endif %}
+    </div>
+    </div>
+
+      <div class="card shadow-sm mt-3">
+        <div class="card-body">
+          <div class="text-muted small">Created by</div>
+          <div class="fw-semibold">{{ bid.created_by.email|default:bid.created_by|default:"-" }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

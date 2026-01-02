@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+
+{% block title %}Appointments | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Appointments</h1>
+      <div class="text-muted">Schedule and manage appointments.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'export_appointments_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
+      <a href="{% url 'export_appointments_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
+      <a href="{% url 'add_appointment' %}" class="btn btn-primary btn-sm">+ New Appointment</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-12 col-md-4">
+          <label class="form-label small text-muted mb-1">Search</label>
+          <input name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Client, staff email, notes" />
+        </div>
+        <div class="col-12 col-md-2">
+          <label class="form-label small text-muted mb-1">Branch</label>
+          <select name="branch" class="form-select form-select-sm">
+            <option value="">All branches</option>
+            {% for b in branches %}
+              <option value="{{ b.id }}" {% if filters.branch == b.id|stringformat:"s" %}selected{% endif %}>{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small text-muted mb-1">Type</label>
+          <select name="appointment_type" class="form-select form-select-sm">
+            <option value="">All</option>
+            {% for value,label in type_choices %}
+              <option value="{{ value }}" {% if filters.appointment_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small text-muted mb-1">Status</label>
+          <select name="status" class="form-select form-select-sm">
+            <option value="">All</option>
+            {% for value,label in status_choices %}
+              <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-1">
+          <label class="form-label small text-muted mb-1">From</label>
+          <input type="datetime-local" name="from" value="{{ filters.from }}" class="form-control form-control-sm" />
+        </div>
+        <div class="col-6 col-md-1">
+          <label class="form-label small text-muted mb-1">To</label>
+          <input type="datetime-local" name="to" value="{{ filters.to }}" class="form-control form-control-sm" />
+        </div>
+        <div class="col-12 col-md-1 d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+          <a href="{% url 'appointments' %}" class="btn btn-outline-secondary btn-sm w-100">Reset</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Total</div>
+          <div class="h4 mb-0">{{ appointments_total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Upcoming</div>
+          <div class="h4 mb-0">{{ appointments_upcoming }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Pending</div>
+          <div class="h4 mb-0">{{ appointments_pending }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="fw-semibold">Recent Appointments</div>
+        <span class="text-muted small">Showing latest 50</span>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Scheduled</th>
+              <th>Client</th>
+              <th class="d-none d-md-table-cell">Type</th>
+              <th>Status</th>
+              <th class="d-none d-lg-table-cell">Assigned To</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in appointments %}
+              <tr>
+                <td class="fw-semibold">{{ a.scheduled_for|date:"Y-m-d H:i" }}</td>
+                <td>{{ a.client }}</td>
+                <td class="d-none d-md-table-cell">{{ a.get_appointment_type_display }}</td>
+                <td>
+                  {% if a.status == 'confirmed' %}
+                    <span class="badge text-bg-primary">Confirmed</span>
+                  {% elif a.status == 'completed' %}
+                    <span class="badge text-bg-success">Completed</span>
+                  {% elif a.status == 'cancelled' %}
+                    <span class="badge text-bg-danger">Cancelled</span>
+                  {% else %}
+                    <span class="badge text-bg-warning">Pending</span>
+                  {% endif %}
+                </td>
+                <td class="d-none d-lg-table-cell">
+                  {{ a.assigned_to.email|default:a.assigned_to.get_username|default:"-" }}
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="5" class="text-center text-muted py-4">No appointments found.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

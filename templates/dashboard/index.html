@@ -1,0 +1,349 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <!-- Dashboard header -->
+  <div class="p-4 bg-light border rounded-3 mb-4">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div>
+        <h1 class="h4 mb-1">Dashboard</h1>
+        <div class="text-muted">Welcome to the Jambas Imaging management portal.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div>
+          <div class="fw-semibold">Quick Actions</div>
+          <div class="text-muted small">Send/download from the module pages; nothing is auto-emailed on save.</div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-primary btn-sm" href="{% url 'add_invoice' %}"><i class="bi bi-plus-circle"></i> New Invoice</a>
+          <a class="btn btn-primary btn-sm" href="{% url 'add_quotation' %}"><i class="bi bi-plus-circle"></i> New Quotation</a>
+          <a class="btn btn-outline-primary btn-sm" href="{% url 'receipts' %}"><i class="bi bi-receipt"></i> Receipts</a>
+          <a class="btn btn-outline-primary btn-sm" href="{% url 'upload_document' %}"><i class="bi bi-upload"></i> Upload Document</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'documents_archive' %}"><i class="bi bi-folder2-open"></i> Documents</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dashboard cards -->
+  <div class="row g-3">
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3">
+            <div class="fs-2 text-primary"><i class="bi bi-people"></i></div>
+            <div class="flex-grow-1">
+              <h2 class="h6 mb-1">Clients</h2>
+              <div class="text-muted small mb-3">Manage customers and client records.</div>
+              <a class="btn btn-primary btn-sm" href="{% url 'clients' %}">Go to Clients</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3">
+            <div class="fs-2 text-primary"><i class="bi bi-receipt"></i></div>
+            <div class="flex-grow-1">
+              <h2 class="h6 mb-1">Invoices</h2>
+              <div class="text-muted small mb-3">Create invoices and track payments.</div>
+              <a class="btn btn-primary btn-sm" href="{% url 'invoices' %}">Go to Invoices</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3">
+            <div class="fs-2 text-primary"><i class="bi bi-briefcase"></i></div>
+            <div class="flex-grow-1">
+              <h2 class="h6 mb-1">Bids</h2>
+              <div class="text-muted small mb-2">Manage tenders and track awards.</div>
+              <div class="small text-muted mb-3">
+                Active: <span class="fw-semibold">{{ bids_counts.active|default:0 }}</span>
+                &nbsp;|&nbsp; Won: <span class="fw-semibold">{{ bids_counts.won|default:0 }}</span>
+                &nbsp;|&nbsp; Lost: <span class="fw-semibold">{{ bids_counts.lost|default:0 }}</span>
+              </div>
+              <a class="btn btn-primary btn-sm" href="{% url 'bids_list' %}">Go to Bids</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3">
+            <div class="fs-2 text-primary"><i class="bi bi-file-earmark-text"></i></div>
+            <div class="flex-grow-1">
+              <h2 class="h6 mb-1">Quotations</h2>
+              <div class="text-muted small mb-2">Create and approve quotations.</div>
+              <div class="small text-muted mb-3">
+                Draft: <span class="fw-semibold">{{ quotations_counts.draft|default:0 }}</span>
+                &nbsp;|&nbsp; Sent: <span class="fw-semibold">{{ quotations_counts.sent|default:0 }}</span>
+                &nbsp;|&nbsp; Approved: <span class="fw-semibold">{{ quotations_counts.approved|default:0 }}</span>
+                &nbsp;|&nbsp; Expired: <span class="fw-semibold">{{ quotations_counts.expired|default:0 }}</span>
+                &nbsp;|&nbsp; Converted: <span class="fw-semibold">{{ quotations_counts.converted|default:0 }}</span>
+              </div>
+              <a class="btn btn-primary btn-sm" href="{% url 'quotations' %}">Go to Quotations</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3">
+            <div class="fs-2 text-primary"><i class="bi bi-cash-coin"></i></div>
+            <div class="flex-grow-1">
+              <h2 class="h6 mb-1">Expenses</h2>
+              <div class="text-muted small mb-3">Track business expenses.</div>
+              <a class="btn btn-primary btn-sm" href="{% url 'expenses' %}">Go to Expenses</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3">
+            <div class="fs-2 text-primary"><i class="bi bi-box-seam"></i></div>
+            <div class="flex-grow-1">
+              <h2 class="h6 mb-1">Inventory</h2>
+              <div class="text-muted small mb-3">Products, categories, suppliers and stock.</div>
+              <a class="btn btn-primary btn-sm" href="{% url 'inventory' %}">Go to Inventory</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3">
+            <div class="fs-2 text-primary"><i class="bi bi-calendar-check"></i></div>
+            <div class="flex-grow-1">
+              <h2 class="h6 mb-1">Appointments</h2>
+              <div class="text-muted small mb-3">Schedule and manage appointments.</div>
+              <a class="btn btn-primary btn-sm" href="{% url 'appointments' %}">Go to Appointments</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3">
+            <div class="fs-2 text-primary"><i class="bi bi-bar-chart"></i></div>
+            <div class="flex-grow-1">
+              <h2 class="h6 mb-1">Reports</h2>
+              <div class="text-muted small mb-3">View reporting and analytics.</div>
+              <a class="btn btn-primary btn-sm" href="{% url 'reports' %}">Go to Reports</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-lg-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3">
+            <div class="fs-2 text-primary"><i class="bi bi-folder2-open"></i></div>
+            <div class="flex-grow-1">
+              <h2 class="h6 mb-1">Documents</h2>
+              <div class="text-muted small mb-3">Archive, download and send documents.</div>
+              <div class="d-flex gap-2 flex-wrap">
+                <a class="btn btn-primary btn-sm" href="{% url 'documents_archive' %}">Open Archive</a>
+                <a class="btn btn-outline-primary btn-sm" href="{% url 'upload_document' %}">Upload</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-12 col-lg-6">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between">
+          <div class="fw-semibold">Recent Invoices</div>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'invoices' %}">All Invoices</a>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Number</th>
+                <th>Client</th>
+                <th>Status</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for inv in recent_invoices %}
+                <tr>
+                  <td class="fw-semibold">{{ inv.number }}</td>
+                  <td>{{ inv.client }}</td>
+                  <td class="text-capitalize">{{ inv.status }}</td>
+                  <td class="text-end">
+                    <a class="btn btn-outline-secondary btn-sm" href="{% url 'invoice_detail' inv.id %}">Open</a>
+                    <a class="btn btn-outline-primary btn-sm" href="{% url 'invoice_pdf' inv.id %}"><i class="bi bi-filetype-pdf"></i></a>
+                    <form method="post" action="{% url 'send_invoice' inv.id %}" class="d-inline">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-success btn-sm" type="submit"><i class="bi bi-envelope"></i></button>
+                    </form>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-3">No invoices yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between">
+          <div class="fw-semibold">Recent Quotations</div>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'quotations' %}">All Quotations</a>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Number</th>
+                <th>Client</th>
+                <th>Status</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for q in recent_quotations %}
+                <tr>
+                  <td class="fw-semibold">{{ q.number }}</td>
+                  <td>{{ q.client }}</td>
+                  <td>{{ q.get_status_display }}</td>
+                  <td class="text-end">
+                    <a class="btn btn-outline-secondary btn-sm" href="{% url 'quotation_detail' q.id %}">Open</a>
+                    <a class="btn btn-outline-primary btn-sm" href="{% url 'quotation_pdf' q.id %}"><i class="bi bi-filetype-pdf"></i></a>
+                    <form method="post" action="{% url 'send_quotation' q.id %}" class="d-inline">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-success btn-sm" type="submit"><i class="bi bi-envelope"></i></button>
+                    </form>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-3">No quotations yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between">
+          <div class="fw-semibold">Recent Documents</div>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'documents_archive' %}">Open Archive</a>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Client</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for d in recent_documents %}
+                <tr>
+                  <td class="fw-semibold">{{ d.title|default:'(Untitled)' }}</td>
+                  <td>{{ d.doc_type_label }}</td>
+                  <td>{{ d.client }}</td>
+                  <td class="text-end">
+                    <a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a>
+                    <form method="post" action="{% url 'send_document' d.id %}" class="d-inline">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-success btn-sm" type="submit"><i class="bi bi-envelope"></i></button>
+                    </form>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="4" class="text-center text-muted py-3">No documents yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white d-flex align-items-center justify-content-between">
+          <div class="fw-semibold">Recent Payments (Receipts)</div>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'invoices' %}">Invoices</a>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Date</th>
+                <th>Invoice</th>
+                <th>Client</th>
+                <th class="text-end">Amount</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in recent_payments %}
+                <tr>
+                  <td>{{ p.paid_at|date:"Y-m-d H:i" }}</td>
+                  <td class="fw-semibold">{{ p.invoice.number }}</td>
+                  <td>{{ p.invoice.client }}</td>
+                  <td class="text-end">{{ p.invoice.currency }} {{ p.amount }}</td>
+                  <td class="text-end">
+                    <a class="btn btn-outline-primary btn-sm" href="{% url 'payment_receipt_pdf' p.invoice.id p.id %}"><i class="bi bi-filetype-pdf"></i></a>
+                    <form method="post" action="{% url 'send_payment_receipt' p.invoice.id p.id %}" class="d-inline">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-success btn-sm" type="submit"><i class="bi bi-envelope"></i></button>
+                    </form>
+                    <a class="btn btn-outline-secondary btn-sm" href="{% url 'invoice_detail' p.invoice.id %}">Open</a>
+                  </td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="5" class="text-center text-muted py-3">No payments yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

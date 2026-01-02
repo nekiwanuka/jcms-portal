@@ -1,0 +1,21 @@
+Appointment Reminder
+
+Hello,
+
+This is a reminder for an upcoming appointment.
+
+Client: {{ client_name }}
+Type: {{ appointment_type }}
+Status: {{ status }}
+When: {{ scheduled_at }}
+Branch: {{ branch_name }}
+Mode: {{ meeting_mode }}
+
+{% if meeting_mode == 'Google Meet' %}Join link: {{ meeting_link }}
+{% elif meeting_mode == 'WhatsApp' %}WhatsApp: {{ meeting_phone }}
+{% elif meeting_mode == 'Physical' %}Location: {{ meeting_location }}
+{% endif %}
+
+Notes: {{ notes|default:'-' }}
+
+If you need to reschedule, please contact the office.

@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block title %}Verify OTP | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-md-5">
+      <div class="card">
+        <div class="card-body">
+          <h1 class="h5 mb-2">OTP Verification</h1>
+          <p class="text-muted mb-3">Enter the OTP sent to your email.</p>
+          <form method="post" class="mb-3" novalidate>
+            {% csrf_token %}
+            <div class="mb-3">
+              <label class="form-label">OTP Code</label>
+              <input class="form-control" name="code" inputmode="numeric" autocomplete="one-time-code" required />
+            </div>
+            <button class="btn btn-dark w-100" type="submit">Verify</button>
+          </form>
+          <a class="btn btn-outline-dark" href="{% url 'accounts:otp_resend' %}">Resend OTP</a>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

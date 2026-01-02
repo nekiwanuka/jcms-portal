@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+
+{% block title %}Reports | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Reports</h1>
+      <div class="text-muted">Business summary (server-rendered).</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'export_reports_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
+      <a href="{% url 'export_reports_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-12 col-md-5">
+          <label class="form-label small text-muted mb-1">Branch</label>
+          <select name="branch" class="form-select form-select-sm">
+            <option value="">All branches</option>
+            {% for b in branches %}
+              <option value="{{ b.id }}" {% if filters.branch == b.id|stringformat:"s" %}selected{% endif %}>{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small text-muted mb-1">From (created date)</label>
+          <input type="date" name="from" value="{{ filters.from }}" class="form-control form-control-sm" />
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small text-muted mb-1">To (created date)</label>
+          <input type="date" name="to" value="{{ filters.to }}" class="form-control form-control-sm" />
+        </div>
+        <div class="col-12 col-md-1 d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+          <a href="{% url 'reports' %}" class="btn btn-outline-secondary btn-sm w-100">Reset</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Clients (Total / Active)</div>
+          <div class="h4 mb-0">{{ kpis.clients_total }} <span class="text-muted">/</span> {{ kpis.clients_active }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Invoices (Total / Paid)</div>
+          <div class="h4 mb-0">{{ kpis.invoices_total }} <span class="text-muted">/</span> {{ kpis.invoices_paid }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Revenue (Payments)</div>
+          <div class="h4 mb-0">{{ kpis.revenue_total }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Expenses</div>
+          <div class="h4 mb-0">{{ kpis.expenses_total }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Net Profit</div>
+          <div class="h4 mb-0">{{ kpis.net_profit }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Appointments (Upcoming)</div>
+          <div class="h4 mb-0">{{ kpis.appointments_upcoming }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Inventory (Products / Low Stock)</div>
+          <div class="h4 mb-0">{{ kpis.products_total }} <span class="text-muted">/</span> {{ kpis.products_low_stock }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="alert alert-primary mb-0" role="alert">
+            Reports are filtered server-side. Use the filter bar above to narrow KPIs.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

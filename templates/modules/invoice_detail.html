@@ -1,0 +1,278 @@
+{% extends 'base.html' %}
+
+{% block title %}Invoice {{ invoice.number }} | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Invoice {{ invoice.number }}</h1>
+      <div class="text-muted">Client: {{ invoice.client }}</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'invoice_pdf' invoice.id %}" class="btn btn-outline-primary btn-sm">Download Invoice PDF</a>
+      <form method="post" action="{% url 'send_invoice' invoice.id %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary btn-sm">Send Invoice</button>
+      </form>
+      <a href="{% url 'invoices' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-5">
+          <div class="text-muted small">Prepared by</div>
+          <div class="fw-semibold">{{ invoice.prepared_by_name|default:invoice.created_by.email|default:"-" }}</div>
+        </div>
+        <div class="col-12 col-md-7">
+          <form method="post" action="{% url 'sign_invoice' invoice.id %}" class="row g-2 align-items-end">
+            {% csrf_token %}
+            <div class="col-12 col-md-8">
+              <label class="form-label small text-muted mb-1">Sign invoice (type name)</label>
+              {{ signature_form.name }}
+              <div class="text-danger small">{{ signature_form.name.errors }}</div>
+            </div>
+            <div class="col-12 col-md-4">
+              <button type="submit" class="btn btn-outline-primary btn-sm w-100">Sign</button>
+            </div>
+          </form>
+          {% if invoice.signed_by_name %}
+            <div class="small text-muted mt-2">Signed by <span class="fw-semibold">{{ invoice.signed_by_name }}</span>{% if invoice.signed_at %} at {{ invoice.signed_at|date:"Y-m-d H:i" }}{% endif %}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Total</div>
+          <div class="h5 mb-0">{{ invoice.currency }} {{ totals.total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Paid</div>
+          <div class="h5 mb-0">{{ invoice.currency }} {{ totals.paid }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Balance</div>
+          <div class="h5 mb-0">{{ invoice.currency }} {{ totals.balance }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Status</div>
+          <div class="h5 mb-0 text-capitalize">{{ invoice.status }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-lg-7">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div class="fw-semibold">Items</div>
+            <a href="{% url 'add_invoice_item' invoice.id %}" class="btn btn-primary btn-sm">+ Add Item</a>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table mb-0 align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Description</th>
+                  <th class="text-end">Qty</th>
+                  <th class="text-end">Unit</th>
+                  <th class="text-end">Line Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for it in items %}
+                  <tr>
+                    <td>
+                      <div class="fw-semibold">{{ it.description }}</div>
+                      {% if it.product %}<div class="small text-muted">Product: {{ it.product }}</div>{% endif %}
+                      <div class="d-flex gap-2 mt-1">
+                        <a class="btn btn-outline-primary btn-sm" href="{% url 'edit_invoice_item' invoice.id it.id %}">Edit</a>
+                        <form method="post" action="{% url 'delete_invoice_item' invoice.id it.id %}">
+                          {% csrf_token %}
+                          <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                        </form>
+                      </div>
+                    </td>
+                    <td class="text-end">{{ it.quantity }}</td>
+                    <td class="text-end">{{ invoice.currency }} {{ it.unit_price }}</td>
+                    <td class="text-end">{{ invoice.currency }} {{ it.line_total }}</td>
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="4" class="text-center text-muted py-4">No items on this invoice.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card-footer bg-white">
+          <div class="d-flex justify-content-end">
+            <div style="min-width: 280px;">
+              <div class="d-flex justify-content-between"><span class="text-muted">Subtotal</span><span>{{ invoice.currency }} {{ totals.subtotal }}</span></div>
+              <div class="d-flex justify-content-between"><span class="text-muted">VAT</span><span>{{ invoice.currency }} {{ totals.vat }}</span></div>
+              <div class="d-flex justify-content-between fw-semibold"><span>Total</span><span>{{ invoice.currency }} {{ totals.total }}</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-5">
+      <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white">
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="fw-semibold">Archived PDFs</div>
+            <a class="btn btn-outline-secondary btn-sm" href="{% url 'documents_archive' %}">Open Archive</a>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Title</th>
+                  <th>Type</th>
+                  <th>v</th>
+                  <th class="text-end">Download</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for d in invoice_documents %}
+                  <tr>
+                    <td>{{ d.title|default:'(Untitled)' }}</td>
+                    <td>{{ d.doc_type_label }}</td>
+                    <td>{{ d.version }}</td>
+                    <td class="text-end">
+                      <a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a>
+                    </td>
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="4" class="text-center text-muted py-3">No archived PDFs yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mb-3">
+        <div class="card-header bg-white">
+          <div class="fw-semibold">Record Payment</div>
+        </div>
+        <div class="card-body">
+          <form method="post" action="{% url 'add_invoice_payment' invoice.id %}">
+            {% csrf_token %}
+            {{ payment_form.non_field_errors }}
+            <div class="row g-2">
+              <div class="col-12">
+                <label class="form-label">Method</label>
+                {{ payment_form.method }}
+                <div class="text-danger small">{{ payment_form.method.errors }}</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Other (specify)</label>
+                {{ payment_form.method_other }}
+                <div class="text-danger small">{{ payment_form.method_other.errors }}</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Amount</label>
+                {{ payment_form.amount }}
+                <div class="text-danger small">{{ payment_form.amount.errors }}</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Reference</label>
+                {{ payment_form.reference }}
+                <div class="text-danger small">{{ payment_form.reference.errors }}</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Paid at</label>
+                {{ payment_form.paid_at }}
+                <div class="text-danger small">{{ payment_form.paid_at.errors }}</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Notes</label>
+                {{ payment_form.notes }}
+                <div class="text-danger small">{{ payment_form.notes.errors }}</div>
+              </div>
+              <div class="col-12">
+                <button type="submit" class="btn btn-primary btn-sm w-100">Save Payment</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-header bg-white">
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="fw-semibold">Payments</div>
+            <span class="text-muted small">Latest first</span>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Date</th>
+                  <th>Method</th>
+                  <th class="text-end">Amount</th>
+                  <th class="text-end">Receipt</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in payments %}
+                  <tr>
+                    <td>{{ p.paid_at|date:"Y-m-d H:i" }}</td>
+                    <td>{{ p.method_label }}</td>
+                    <td class="text-end">{{ invoice.currency }} {{ p.amount }}</td>
+                    <td class="text-end">
+                      <a class="btn btn-outline-primary btn-sm" href="{% url 'payment_receipt_pdf' invoice.id p.id %}">PDF</a>
+                      {% if p.archived_receipt_doc %}
+                        <a class="btn btn-outline-secondary btn-sm" href="{% url 'download_document' p.archived_receipt_doc.id %}" title="Download archived receipt"><i class="bi bi-archive"></i></a>
+                      {% endif %}
+                      <form method="post" action="{% url 'send_payment_receipt' invoice.id p.id %}" class="d-inline">
+                        {% csrf_token %}
+                        <button class="btn btn-outline-success btn-sm" type="submit">Send</button>
+                      </form>
+                    </td>
+                  </tr>
+                  {% if p.reference or p.notes %}
+                    <tr class="table-light">
+                      <td colspan="4" class="small text-muted">
+                        {% if p.reference %}<div><span class="fw-semibold">Ref:</span> {{ p.reference }}</div>{% endif %}
+                        {% if p.notes %}<div><span class="fw-semibold">Notes:</span> {{ p.notes }}</div>{% endif %}
+                      </td>
+                    </tr>
+                  {% endif %}
+                {% empty %}
+                  <tr><td colspan="4" class="text-center text-muted py-4">No payments yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

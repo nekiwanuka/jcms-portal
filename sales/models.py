@@ -65,12 +65,23 @@ class Quotation(models.Model):
 		return self.number or f"Quotation #{self.pk}"
 
 	def _next_number(self) -> str:
+		"""Generate the next quotation number.
+
+		On some shared-host deployments, database locking/privileges can be quirky.
+		If sequence increment fails for any reason, fall back to a timestamp-based
+		identifier so the request doesn't 500.
+		"""
 		year = timezone.localdate().year
-		with transaction.atomic():
-			seq, _ = QuotationSequence.objects.select_for_update().get_or_create(year=year)
-			seq.last_number += 1
-			seq.save(update_fields=["last_number"])
-			return f"Q-{year}-{seq.last_number:05d}"
+		try:
+			with transaction.atomic():
+				seq, _ = QuotationSequence.objects.select_for_update().get_or_create(year=year)
+				seq.last_number += 1
+				seq.save(update_fields=["last_number"])
+				return f"Q-{year}-{seq.last_number:05d}"
+		except Exception:
+			# Fallback keeps numbers unique-ish without relying on the sequence table.
+			ts = int(timezone.now().timestamp())
+			return f"Q-{year}-{ts}"
 
 	def save(self, *args, **kwargs):
 		if not self.number:

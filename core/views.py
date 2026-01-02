@@ -10,7 +10,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.db.models import F
 from django.http import HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from reportlab.lib import colors
@@ -608,8 +608,13 @@ def quotation_detail(request, quotation_id: int):
 	from documents.models import Document
 
 	quote = get_object_or_404(Quotation.objects.select_related("client", "created_by"), pk=quotation_id)
-	quote.refresh_expiry_status(save=True)
-	quote.recalculate_amounts(save=True)
+	# Avoid writes on GET (and avoid production-only DB edge cases). If these
+	# computations fail, still render the page with stored values.
+	try:
+		quote.refresh_expiry_status(save=False)
+		quote.recalculate_amounts(save=False)
+	except Exception:
+		pass
 
 	docs = Document.objects.filter(related_quotation=quote).order_by("-uploaded_at", "-version")
 	return render(
@@ -2196,8 +2201,16 @@ def audit_logs_view(request):
 	from accounts.models import LoginAuditLog
 	from core.models import AuditEvent
 
-	events = AuditEvent.objects.select_related("actor", "client").all()[:200]
-	logins = LoginAuditLog.objects.select_related("user").all()[:200]
+	try:
+		events = AuditEvent.objects.select_related("actor", "client").order_by("-created_at")[:200]
+	except Exception:
+		events = []
+		messages.warning(request, "Audit events are temporarily unavailable.")
+	try:
+		logins = LoginAuditLog.objects.select_related("user").order_by("-created_at")[:200]
+	except Exception:
+		logins = []
+		messages.warning(request, "Login audit is temporarily unavailable.")
 	return render(request, "modules/audit_logs.html", {"events": events, "logins": logins})
 
 

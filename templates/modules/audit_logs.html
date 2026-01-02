@@ -30,7 +30,13 @@
                 <tr>
                   <td class="text-muted">{{ e.created_at|date:"Y-m-d H:i" }}</td>
                   <td>{{ e.get_action_display }}</td>
-                  <td>{{ e.actor.email|default:"-" }}</td>
+                  <td>
+                    {% if e.actor %}
+                      {{ e.actor.email }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
                   <td>{{ e.client|default:"-" }}</td>
                   <td>{{ e.summary|default:"-" }}</td>
                 </tr>
@@ -60,7 +66,15 @@
               {% for l in logins %}
                 <tr>
                   <td class="text-muted">{{ l.created_at|date:"Y-m-d H:i" }}</td>
-                  <td>{{ l.email|default:l.user.email }}</td>
+                  <td>
+                    {% if l.email %}
+                      {{ l.email }}
+                    {% elif l.user %}
+                      {{ l.user.email }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
                   <td>{{ l.ip_address|default:"-" }}</td>
                   <td>
                     {% if l.success %}

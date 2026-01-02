@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+
+{% block title %}Supplier | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">{{ supplier.name }}</h1>
+      <div class="text-muted">Supplier details and captured prices.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-primary btn-sm" href="{% url 'edit_supplier' supplier.id %}">Edit</a>
+      <a class="btn btn-primary btn-sm" href="{% url 'add_supplier_price' %}?supplier={{ supplier.id }}">+ Add Price</a>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-lg-5">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-white">
+          <div class="fw-semibold">Supplier Info</div>
+        </div>
+        <div class="card-body">
+          <div class="mb-2"><span class="text-muted">Contact person:</span> {{ supplier.contact_person|default:"-" }}</div>
+          <div class="mb-2"><span class="text-muted">Phone:</span> {{ supplier.phone|default:"-" }}{% if supplier.alt_phone %} / {{ supplier.alt_phone }}{% endif %}</div>
+          <div class="mb-2"><span class="text-muted">Email:</span> {{ supplier.email|default:"-" }}</div>
+          <div class="mb-2"><span class="text-muted">Website:</span> {{ supplier.website|default:"-" }}</div>
+          <div class="mb-2"><span class="text-muted">Address:</span> {{ supplier.address|default:"-" }}</div>
+          <div class="mb-2"><span class="text-muted">TIN:</span> {{ supplier.tin|default:"-" }}</div>
+          <div class="mb-2">
+            <span class="text-muted">Status:</span>
+            {% if supplier.is_active %}
+              <span class="badge text-bg-success">Active</span>
+            {% else %}
+              <span class="badge text-bg-secondary">Inactive</span>
+            {% endif %}
+          </div>
+          {% if supplier.notes %}
+            <hr />
+            <div class="text-muted small">Notes</div>
+            <div>{{ supplier.notes }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-7">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-white">
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="fw-semibold">Captured Prices</div>
+            <a class="btn btn-outline-primary btn-sm" href="{% url 'add_supplier_price' %}?supplier={{ supplier.id }}">Add price</a>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Product</th>
+                  <th class="text-end">Unit Price</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in prices %}
+                  <tr>
+                    <td>
+                      <div class="fw-semibold">{{ p.product.name }}</div>
+                      <div class="text-muted small">{{ p.product.sku }}</div>
+                    </td>
+                    <td class="text-end">{{ p.unit_price|floatformat:2 }} {{ p.currency }}</td>
+                    <td>{{ p.quoted_at }}</td>
+                    <td>
+                      {% if p.is_active %}
+                        <span class="badge text-bg-success">Active</span>
+                      {% else %}
+                        <span class="badge text-bg-secondary">Inactive</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% empty %}
+                  <tr>
+                    <td colspan="4" class="text-center text-muted py-4">No prices captured yet.</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

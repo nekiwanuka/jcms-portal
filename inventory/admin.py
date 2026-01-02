@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Product, ProductCategory, StockMovement, Supplier
+from .models import Product, ProductCategory, StockMovement, Supplier, SupplierProductPrice
 
 
 @admin.register(Supplier)
@@ -29,3 +29,10 @@ class StockMovementAdmin(admin.ModelAdmin):
 	list_display = ("product", "movement_type", "quantity", "reference", "occurred_at")
 	list_filter = ("movement_type",)
 	search_fields = ("product__sku", "product__name", "reference")
+
+
+@admin.register(SupplierProductPrice)
+class SupplierProductPriceAdmin(admin.ModelAdmin):
+	list_display = ("supplier", "product", "unit_price", "currency", "quoted_at", "is_active")
+	list_filter = ("currency", "is_active", "quoted_at")
+	search_fields = ("supplier__name", "product__sku", "product__name")

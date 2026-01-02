@@ -11,6 +11,7 @@
     <div class="d-flex gap-2">
         <a href="{% url 'export_inventory_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
         <a href="{% url 'export_inventory_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
+      <a href="{% url 'suppliers' %}" class="btn btn-outline-primary btn-sm">Suppliers</a>
       <a href="{% url 'add_inventory' %}" class="btn btn-primary btn-sm">+ Add Product</a>
     </div>
   </div>
@@ -108,6 +109,7 @@
               <th class="text-end">Stock</th>
               <th class="text-end d-none d-md-table-cell">Low Stock At</th>
               <th>Status</th>
+              <th class="text-end">Prices</th>
             </tr>
           </thead>
           <tbody>
@@ -129,10 +131,13 @@
                     <span class="badge text-bg-success">OK</span>
                   {% endif %}
                 </td>
+                <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm" href="{% url 'product_price_compare' p.id %}">Compare</a>
+                </td>
               </tr>
             {% empty %}
               <tr>
-                <td colspan="7" class="text-center text-muted py-4">No products found.</td>
+                <td colspan="8" class="text-center text-muted py-4">No products found.</td>
               </tr>
             {% endfor %}
           </tbody>

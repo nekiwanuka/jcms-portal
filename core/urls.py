@@ -62,6 +62,14 @@ urlpatterns = [
     path("inventory/add/", views.add_inventory, name="add_inventory"),
     path("inventory/export/csv/", views.export_inventory_csv, name="export_inventory_csv"),
     path("inventory/export/pdf/", views.export_inventory_pdf, name="export_inventory_pdf"),
+
+    # Suppliers (inventory)
+    path("inventory/suppliers/", views.suppliers_view, name="suppliers"),
+    path("inventory/suppliers/add/", views.add_supplier, name="add_supplier"),
+    path("inventory/suppliers/<int:supplier_id>/", views.supplier_detail, name="supplier_detail"),
+    path("inventory/suppliers/<int:supplier_id>/edit/", views.edit_supplier, name="edit_supplier"),
+    path("inventory/supplier-prices/add/", views.add_supplier_price, name="add_supplier_price"),
+    path("inventory/products/<int:product_id>/prices/", views.product_price_compare, name="product_price_compare"),
     path("expenses/", views.expenses_view, name="expenses"),
     path("expenses/add/", views.add_expense, name="add_expense"),
     path("expenses/export/csv/", views.export_expenses_csv, name="export_expenses_csv"),

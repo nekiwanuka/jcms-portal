@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block title %}Product Prices | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Supplier Prices</h1>
+      <div class="text-muted">Compare supplier prices for: <span class="fw-semibold">{{ product.name }}</span> ({{ product.sku }})</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'inventory' %}">Back to Inventory</a>
+      <a class="btn btn-primary btn-sm" href="{% url 'add_supplier_price' %}?product={{ product.id }}">+ Add Price</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white">
+      <div class="fw-semibold">Latest Prices (per supplier)</div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Supplier</th>
+              <th class="text-end">Unit Price</th>
+              <th>Date</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in prices %}
+              <tr>
+                <td class="fw-semibold">
+                  <a class="text-decoration-none" href="{% url 'supplier_detail' p.supplier.id %}">{{ p.supplier.name }}</a>
+                </td>
+                <td class="text-end">{{ p.unit_price|floatformat:2 }} {{ p.currency }}</td>
+                <td>{{ p.quoted_at }}</td>
+                <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm" href="{% url 'add_supplier_price' %}?supplier={{ p.supplier.id }}&product={{ product.id }}">Update Price</a>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="4" class="text-center text-muted py-4">No supplier prices captured yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

@@ -1505,6 +1505,138 @@ def inventory_view(request):
 	return render(request, "modules/inventory.html", context)
 
 
+def suppliers_view(request):
+	"""Suppliers register (list + filters)."""
+	from inventory.models import Supplier
+
+	q = (request.GET.get("q") or "").strip()
+	is_active = (request.GET.get("is_active") or "").strip()
+
+	qs = Supplier.objects.all().order_by("name")
+	if q:
+		qs = qs.filter(name__icontains=q)
+	if is_active in {"0", "1"}:
+		qs = qs.filter(is_active=(is_active == "1"))
+
+	context = {
+		"suppliers": qs,
+		"filters": {"q": q, "is_active": is_active},
+	}
+	return render(request, "modules/suppliers.html", context)
+
+
+def add_supplier(request):
+	from inventory.forms import SupplierForm
+
+	if request.method == "POST":
+		form = SupplierForm(request.POST)
+		if form.is_valid():
+			form.save()
+			return redirect("suppliers")
+	else:
+		form = SupplierForm()
+
+	return render(request, "modules/add_supplier.html", {"form": form})
+
+
+def edit_supplier(request, supplier_id: int):
+	from inventory.forms import SupplierForm
+	from inventory.models import Supplier
+
+	supplier = get_object_or_404(Supplier, pk=supplier_id)
+	if request.method == "POST":
+		form = SupplierForm(request.POST, instance=supplier)
+		if form.is_valid():
+			form.save()
+			return redirect("supplier_detail", supplier_id=supplier.id)
+	else:
+		form = SupplierForm(instance=supplier)
+
+	return render(request, "modules/edit_supplier.html", {"form": form, "supplier": supplier})
+
+
+def supplier_detail(request, supplier_id: int):
+	from inventory.models import Supplier, SupplierProductPrice
+
+	supplier = get_object_or_404(Supplier, pk=supplier_id)
+	prices = (
+		SupplierProductPrice.objects.select_related("product")
+		.filter(supplier=supplier)
+		.order_by("-quoted_at", "-id")
+	)
+
+	return render(
+		request,
+		"modules/supplier_detail.html",
+		{
+			"supplier": supplier,
+			"prices": prices,
+		},
+	)
+
+
+def add_supplier_price(request):
+	"""Capture supplier pricing for a product.
+
+	Accepts optional query params: ?supplier=<id>&product=<id>
+	"""
+	from inventory.forms import SupplierProductPriceForm
+	from inventory.models import Supplier, Product
+
+	initial = {}
+	supplier_id = request.GET.get("supplier")
+	product_id = request.GET.get("product")
+	if supplier_id:
+		try:
+			initial["supplier"] = Supplier.objects.get(pk=int(supplier_id))
+		except Exception:
+			pass
+	if product_id:
+		try:
+			initial["product"] = Product.objects.get(pk=int(product_id))
+		except Exception:
+			pass
+
+	if request.method == "POST":
+		form = SupplierProductPriceForm(request.POST)
+		if form.is_valid():
+			price = form.save()
+			# Prefer returning back to supplier detail if supplier was specified.
+			return redirect("supplier_detail", supplier_id=price.supplier_id)
+	else:
+		form = SupplierProductPriceForm(initial=initial)
+
+	return render(request, "modules/add_supplier_price.html", {"form": form})
+
+
+def product_price_compare(request, product_id: int):
+	"""Compare supplier prices for a single product."""
+	from inventory.models import Product, SupplierProductPrice
+
+	product = get_object_or_404(Product, pk=product_id)
+	all_prices = (
+		SupplierProductPrice.objects.select_related("supplier")
+		.filter(product=product, is_active=True)
+		.order_by("-quoted_at", "unit_price")
+	)
+
+	# Pick latest record per supplier (sqlite-friendly, done in Python)
+	latest_by_supplier = {}
+	for p in all_prices:
+		if p.supplier_id not in latest_by_supplier:
+			latest_by_supplier[p.supplier_id] = p
+	latest_prices = sorted(latest_by_supplier.values(), key=lambda x: (x.unit_price, x.supplier.name.lower()))
+
+	return render(
+		request,
+		"modules/product_prices.html",
+		{
+			"product": product,
+			"prices": latest_prices,
+		},
+	)
+
+
 @login_required
 def add_inventory(request):
 	"""Create a product (inventory item) via a server-rendered ModelForm."""

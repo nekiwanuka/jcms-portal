@@ -291,7 +291,12 @@
       </div>
 
       <div class="logo-section">
-        <img src="{% static 'images/jambas-logo-white.svg' %}" alt="Jambas Imaging" class="logo-img" />
+        <img
+          src="{% static 'images/jambas-logo-white.svg' %}"
+          onerror="this.onerror=null;this.src='{% static 'images/jambas-company-logo.png' %}';"
+          alt="Jambas Imaging"
+          class="logo-img"
+        />
         <div class="system-name">Business Management Portal</div>
       </div>
 

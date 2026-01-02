@@ -119,6 +119,24 @@ This script upgrades pip tooling inside the Passenger virtualenv and installs `r
     - `manage.py migrate`
     - `manage.py collectstatic --noinput`
     - `manage.py createsuperuser`
+
+### Troubleshooting
+
+**Broken logo / SVG not showing**
+
+- On some shared hosts, `.svg` can be blocked or served with the wrong MIME type.
+- This project now falls back to `static/images/jambas-company-logo.png` automatically if the SVG fails.
+- If the image is still broken, your server is not serving `/static/`.
+   - Run: `manage.py collectstatic --noinput`
+   - Ensure your web server maps `/static/` to the app `staticfiles/` directory.
+
+**Login says “Invalid credentials”**
+
+- Login uses **email + password** (not username).
+- If you recently switched databases (SQLite ↔ Postgres), your admin user might be in a different DB.
+- Use these scripts via **Setup Python App → Execute Python Script**:
+   - `tools/cpanel_diag.py` (prints DB + lists users)
+   - `tools/cpanel_set_password.py` (set env vars `TARGET_EMAIL`, `NEW_PASSWORD` to reset a user password)
 - `inventory/` – products, suppliers, stock movements
 - `sales/` – quotations
 - `invoices/` – invoices, payments

@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import views as auth_views
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.shortcuts import redirect, render
@@ -8,6 +9,28 @@ from django.utils import timezone
 
 from .forms import EmailLoginForm, OtpVerifyForm
 from .models import LoginAuditLog, OneTimePassword
+
+
+class SafePasswordResetView(auth_views.PasswordResetView):
+	"""Password reset that surfaces email backend failures.
+
+	On shared hosts SMTP is often misconfigured; Django's default behavior is to raise,
+	causing a 500. Here we show a user-friendly message instead.
+	"""
+
+	def form_valid(self, form):
+		try:
+			return super().form_valid(form)
+		except Exception as exc:
+			# Don't leak internals in production.
+			if getattr(settings, "DEBUG", False):
+				messages.error(self.request, f"Unable to send reset email: {exc}")
+			else:
+				messages.error(
+					self.request,
+					"Unable to send reset email right now. Please contact support.",
+				)
+			return self.render_to_response(self.get_context_data(form=form))
 
 
 def _get_client_ip(request):

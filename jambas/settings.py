@@ -23,6 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 if load_dotenv is not None:
     load_dotenv(BASE_DIR / ".env")
+    # Local dev overrides (not committed). This lets production keep `.env`
+    # while local machines can use SQLite etc.
+    load_dotenv(BASE_DIR / ".env.local", override=True)
 
 
 # Quick-start development settings - unsuitable for production

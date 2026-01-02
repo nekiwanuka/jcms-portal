@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block title %}Login | Jambas Imaging{% endblock %}
 
@@ -7,6 +8,12 @@
     <div class="card shadow-sm border-0" style="max-width: 420px; width: 100%;">
       <div class="card-body p-4">
         <div class="text-center mb-4">
+          <div class="mb-3">
+            <picture>
+              <source srcset="{% static 'images/jambas-logo-white.svg' %}" type="image/svg+xml" />
+              <img src="{% static 'images/jambas-company-logo.png' %}" alt="Jambas Imaging" style="height: 52px; width: auto; max-width: 240px;" />
+            </picture>
+          </div>
           <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-light" style="width: 64px; height: 64px;">
             <i class="bi bi-shield-lock-fill fs-2 text-primary"></i>
           </div>

@@ -1,14 +1,19 @@
-"""Publish Django static files to public_html on cPanel.
+"""Publish Django static files to a cPanel document root.
 
 Problem: cPanel/Apache typically serves /static/ from public_html, not from your app root.
 Django's collectstatic puts files in STATIC_ROOT (here: BASE_DIR/staticfiles).
 
 This script copies:
-- <app>/staticfiles/*  ->  ~/public_html/static/
+- <app>/staticfiles/*  ->  <DOCUMENT_ROOT>/static/
+
+By default, DOCUMENT_ROOT is `~/public_html`.
+For subdomains, set one of these env vars in **Setup Python App**:
+- `CPANEL_DOCUMENT_ROOT=/home/<user>/<subdomain>` (recommended)
+- or `STATIC_PUBLISH_ROOT=/home/<user>/<subdomain>`
 
 Optional:
 - Set PUBLISH_MEDIA=1 to also copy:
-  - <app>/media/*      ->  ~/public_html/media/
+	- <app>/media/*      ->  <DOCUMENT_ROOT>/media/
 
 Run from: cPanel Setup Python App -> Execute Python Script
 - tools/cpanel_publish_static.py
@@ -57,13 +62,19 @@ def _copy_tree(src: Path, dst: Path) -> tuple[int, int]:
 
 def main():
 	home = Path.home()
-	public_html = Path(os.environ.get("CPANEL_PUBLIC_HTML") or (home / "public_html"))
+	doc_root = (
+		os.environ.get("CPANEL_DOCUMENT_ROOT")
+		or os.environ.get("STATIC_PUBLISH_ROOT")
+		or os.environ.get("CPANEL_PUBLIC_HTML")
+		or str(home / "public_html")
+	)
+	public_root = Path(doc_root)
 
 	static_src = Path(str(getattr(settings, "STATIC_ROOT", "")))
 	if not static_src:
 		raise SystemExit("STATIC_ROOT is not set; cannot publish static.")
 
-	static_dst = public_html / "static"
+	static_dst = public_root / "static"
 
 	print("=== Publish static ===")
 	print(f"STATIC_ROOT: {static_src}")
@@ -74,7 +85,7 @@ def main():
 
 	if os.environ.get("PUBLISH_MEDIA", "0") == "1":
 		media_src = Path(str(getattr(settings, "MEDIA_ROOT", "")))
-		media_dst = public_html / "media"
+		media_dst = public_root / "media"
 		print("\n=== Publish media ===")
 		print(f"MEDIA_ROOT: {media_src}")
 		print(f"Target:     {media_dst}")

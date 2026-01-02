@@ -13,6 +13,13 @@ This script does NOT print the password.
 """
 
 import os
+import sys
+from pathlib import Path
+
+# Ensure project root is on sys.path (cPanel can run scripts with sys.path[0]=tools/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+	sys.path.insert(0, str(PROJECT_ROOT))
 
 TARGET_EMAIL = (os.environ.get("TARGET_EMAIL") or "").strip().lower()
 NEW_PASSWORD = os.environ.get("NEW_PASSWORD") or ""

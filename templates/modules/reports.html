@@ -64,7 +64,11 @@
       <div class="card shadow-sm h-100">
         <div class="card-body">
           <div class="text-muted small">Revenue (Payments)</div>
-          <div class="h4 mb-0">{{ kpis.revenue_total }}</div>
+          {% if show_income %}
+            <div class="h4 mb-0">{{ kpis.revenue_total }}</div>
+          {% else %}
+            <div class="text-muted">Restricted</div>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -82,7 +86,11 @@
       <div class="card shadow-sm h-100">
         <div class="card-body">
           <div class="text-muted small">Net Profit</div>
-          <div class="h4 mb-0">{{ kpis.net_profit }}</div>
+          {% if show_income %}
+            <div class="h4 mb-0">{{ kpis.net_profit }}</div>
+          {% else %}
+            <div class="text-muted">Restricted</div>
+          {% endif %}
         </div>
       </div>
     </div>

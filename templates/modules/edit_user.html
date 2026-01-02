@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit User | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Edit User</h1>
+      <div class="text-muted">{{ user_obj.email }}</div>
+    </div>
+    <a href="{% url 'users' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">Email</label>
+          {{ form.email }}
+        </div>
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">Role</label>
+          {{ form.role }}
+        </div>
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">Full name</label>
+          {{ form.full_name }}
+        </div>
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">Phone</label>
+          {{ form.phone }}
+        </div>
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">New password (optional)</label>
+          <input type="password" name="new_password1" class="form-control" />
+          {% if form.new_password1.errors %}<div class="text-danger small">{{ form.new_password1.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">Confirm new password</label>
+          <input type="password" name="new_password2" class="form-control" />
+          {% if form.new_password2.errors %}<div class="text-danger small">{{ form.new_password2.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-12">
+          <div class="form-check">
+            {{ form.is_active }}
+            <label class="form-check-label">Active</label>
+          </div>
+        </div>
+
+        {% if form.non_field_errors %}
+          <div class="col-12"><div class="alert alert-danger">{{ form.non_field_errors }}</div></div>
+        {% endif %}
+
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <a href="{% url 'users' %}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

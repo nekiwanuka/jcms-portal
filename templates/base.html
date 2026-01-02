@@ -390,6 +390,21 @@
                 <span>Reports</span>
               </a>
             </li>
+
+      {% if request.user.is_superuser or request.user.role == 'admin' %}
+        <li class="nav-item">
+        <a class="nav-link" href="{% url 'users' %}">
+          <i class="bi bi-people-fill"></i>
+          <span>Users</span>
+        </a>
+        </li>
+        <li class="nav-item">
+        <a class="nav-link" href="{% url 'audit_logs' %}">
+          <i class="bi bi-shield-check"></i>
+          <span>Audit Logs</span>
+        </a>
+        </li>
+      {% endif %}
           {% endif %}
         </ul>
       </nav>

@@ -81,4 +81,10 @@ urlpatterns = [
     path("reports/", views.reports_view, name="reports"),
 	path("reports/export/csv/", views.export_reports_csv, name="export_reports_csv"),
 	path("reports/export/pdf/", views.export_reports_pdf, name="export_reports_pdf"),
+
+    # System (admin-only)
+    path("system/users/", views.users_view, name="users"),
+    path("system/users/add/", views.add_user, name="add_user"),
+    path("system/users/<int:user_id>/edit/", views.edit_user, name="edit_user"),
+    path("system/audit/", views.audit_logs_view, name="audit_logs"),
 ]

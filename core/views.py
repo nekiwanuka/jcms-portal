@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.db.models import F
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
@@ -16,6 +17,25 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+
+def _role(user) -> str | None:
+	return getattr(user, "role", None)
+
+
+def _is_admin(user) -> bool:
+	return bool(user and user.is_authenticated and (getattr(user, "is_superuser", False) or _role(user) == "admin"))
+
+
+def _can_view_income(user) -> bool:
+	return bool(user and user.is_authenticated and (getattr(user, "is_superuser", False) or _role(user) in {"admin", "manager"}))
+
+
+def _require_admin(request):
+	if _is_admin(request.user):
+		return None
+	messages.error(request, "You do not have permission to access that page.")
+	return redirect("dashboard")
 
 
 def _get_str(request, key: str) -> str:
@@ -1949,9 +1969,10 @@ def reports_view(request):
 	clients_active = clients_qs.filter(status=Client.Status.ACTIVE).count()
 	invoices_total = invoices_qs.count()
 	invoices_paid = invoices_qs.filter(status=Invoice.Status.PAID).count()
-	revenue_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0
+	show_income = _can_view_income(request.user)
+	revenue_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0 if show_income else None
 	expenses_total = expenses_qs.aggregate(total=Sum("amount")).get("total") or 0
-	net_profit = revenue_total - expenses_total
+	net_profit = (revenue_total - expenses_total) if show_income else None
 	appointments_upcoming = appointments_qs.filter(scheduled_for__gte=now).count()
 	products_total = products_qs.count()
 	products_low_stock = products_qs.filter(stock_quantity__lte=F("low_stock_threshold")).count()
@@ -1969,6 +1990,7 @@ def reports_view(request):
 			"products_low_stock": products_low_stock,
 			"appointments_upcoming": appointments_upcoming,
 		},
+		"show_income": show_income,
 		"branches": Branch.objects.filter(is_active=True),
 		"filters": {
 			"branch": _get_str(request, "branch"),
@@ -2033,11 +2055,14 @@ def export_reports_csv(request):
 	writer.writerow(["Clients Active", clients_qs.filter(status=Client.Status.ACTIVE).count()])
 	writer.writerow(["Invoices Total", invoices_qs.count()])
 	writer.writerow(["Invoices Paid", invoices_qs.filter(status=Invoice.Status.PAID).count()])
-	revenue_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0
+	show_income = _can_view_income(request.user)
+	revenue_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0 if show_income else None
 	expenses_total = expenses_qs.aggregate(total=Sum("amount")).get("total") or 0
-	writer.writerow(["Revenue (Payments)", revenue_total])
+	if show_income:
+		writer.writerow(["Revenue (Payments)", revenue_total])
 	writer.writerow(["Expenses", expenses_total])
-	writer.writerow(["Net Profit", revenue_total - expenses_total])
+	if show_income:
+		writer.writerow(["Net Profit", revenue_total - expenses_total])
 	writer.writerow(["Appointments Upcoming", appointments_qs.filter(scheduled_for__gte=now).count()])
 	writer.writerow(["Products Total", products_qs.count()])
 	writer.writerow(["Products Low Stock", products_qs.filter(stock_quantity__lte=F("low_stock_threshold")).count()])
@@ -2088,7 +2113,8 @@ def export_reports_pdf(request):
 		appointments_qs = appointments_qs.filter(created_at__date__lte=to_date)
 		products_qs = products_qs.filter(created_at__date__lte=to_date)
 
-	revenue_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0
+	show_income = _can_view_income(request.user)
+	revenue_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0 if show_income else None
 	expenses_total = expenses_qs.aggregate(total=Sum("amount")).get("total") or 0
 
 	rows = [
@@ -2096,19 +2122,83 @@ def export_reports_pdf(request):
 		["Clients Active", str(clients_qs.filter(status=Client.Status.ACTIVE).count())],
 		["Invoices Total", str(invoices_qs.count())],
 		["Invoices Paid", str(invoices_qs.filter(status=Invoice.Status.PAID).count())],
-		["Revenue (Payments)", str(revenue_total)],
 		["Expenses", str(expenses_total)],
-		["Net Profit", str(revenue_total - expenses_total)],
 		["Appointments Upcoming", str(appointments_qs.filter(scheduled_for__gte=now).count())],
 		["Products Total", str(products_qs.count())],
 		["Products Low Stock", str(products_qs.filter(stock_quantity__lte=F("low_stock_threshold")).count())],
 	]
+	if show_income:
+		rows.insert(4, ["Revenue (Payments)", str(revenue_total)])
+		rows.insert(6, ["Net Profit", str(revenue_total - expenses_total)])
 	return _pdf_response(
 		title="Reports Summary",
 		header=["Metric", "Value"],
 		rows=rows,
 		filename="reports.pdf",
 	)
+
+
+@login_required
+def users_view(request):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+
+	User = get_user_model()
+	users = User.objects.all().order_by("email")
+	return render(request, "modules/users.html", {"users": users})
+
+
+@login_required
+def add_user(request):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+
+	from accounts.forms import AdminUserCreateForm
+
+	form = AdminUserCreateForm(request.POST or None)
+	if request.method == "POST" and form.is_valid():
+		form.save()
+		messages.success(request, "User created successfully.")
+		return redirect("users")
+	return render(request, "modules/add_user.html", {"form": form})
+
+
+@login_required
+def edit_user(request, user_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+
+	from accounts.forms import AdminUserUpdateForm
+
+	User = get_user_model()
+	user_obj = User.objects.filter(id=user_id).first()
+	if user_obj is None:
+		messages.error(request, "User not found.")
+		return redirect("users")
+
+	form = AdminUserUpdateForm(request.POST or None, instance=user_obj)
+	if request.method == "POST" and form.is_valid():
+		form.save()
+		messages.success(request, "User updated successfully.")
+		return redirect("users")
+	return render(request, "modules/edit_user.html", {"form": form, "user_obj": user_obj})
+
+
+@login_required
+def audit_logs_view(request):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+
+	from accounts.models import LoginAuditLog
+	from core.models import AuditEvent
+
+	events = AuditEvent.objects.select_related("actor", "client").all()[:200]
+	logins = LoginAuditLog.objects.select_related("user").all()[:200]
+	return render(request, "modules/audit_logs.html", {"events": events, "logins": logins})
 
 
 # Backwards-compatible alias (older code referenced `dashboard`)

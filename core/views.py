@@ -839,6 +839,7 @@ def send_quotation(request, quotation_id: int):
 	from django.core.mail import EmailMultiAlternatives
 	from django.core.files.base import ContentFile
 	from sales.models import Quotation
+	from invoices.models import Invoice
 	from documents.models import Document
 
 	quote = get_object_or_404(Quotation.objects.select_related("client", "created_by"), pk=quotation_id)
@@ -867,11 +868,12 @@ def send_quotation(request, quotation_id: int):
 	msg.attach(filename=f"{quote.number}.pdf", content=pdf_bytes, mimetype="application/pdf")
 	try:
 		msg.send(fail_silently=False)
+		related_invoice_id = Invoice.objects.filter(quotation=quote).values_list("id", flat=True).first()
 		Document.objects.create(
 			branch_id=getattr(quote, "branch_id", None),
 			client=quote.client,
 			related_quotation=quote,
-			related_invoice_id=getattr(getattr(quote, "invoice", None), "id", None),
+			related_invoice_id=related_invoice_id,
 			doc_type=Document.DocumentType.QUOTATION,
 			title=f"Quotation {quote.number}",
 			uploaded_by=request.user,
@@ -892,11 +894,14 @@ def convert_quotation_to_invoice(request, quotation_id: int):
 	if request.method != "POST":
 		return redirect("quotation_detail", quotation_id=quote.id)
 	quote.refresh_expiry_status(save=True)
+
+	existing_invoice_id = Invoice.objects.filter(quotation=quote).values_list("id", flat=True).first()
+	if existing_invoice_id:
+		return redirect("invoice_detail", invoice_id=existing_invoice_id)
+
 	if quote.status != Quotation.Status.ACCEPTED:
 		messages.error(request, "Only Approved quotations can be converted to an invoice.")
 		return redirect("quotation_detail", quotation_id=quote.id)
-	if hasattr(quote, "invoice") and quote.invoice_id:
-		return redirect("invoice_detail", invoice_id=quote.invoice_id)
 
 	invoice = Invoice.objects.create(
 		client=quote.client,

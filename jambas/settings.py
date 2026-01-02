@@ -181,7 +181,7 @@ EMAIL_USE_TLS = (os.getenv("EMAIL_USE_TLS", "1") == "1") or (_mail_encryption in
 if EMAIL_USE_SSL:
     EMAIL_USE_TLS = False
 
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER") or os.getenv("MAIL_USERNAME", "")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER") or os.getenv("MAIL_USERNAME") or DEFAULT_FROM_EMAIL
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD") or os.getenv("MAIL_PASSWORD", "")
 
 AUTH_USER_MODEL = 'accounts.User'

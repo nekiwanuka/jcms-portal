@@ -9,6 +9,7 @@ urlpatterns = [
     # Frontend module pages (template-rendered, login-protected)
     path("clients/", views.clients_view, name="clients"),
     path("clients/add/", views.add_client, name="add_client"),
+	path("clients/<int:client_id>/", views.client_history, name="client_history"),
     path("clients/export/csv/", views.export_clients_csv, name="export_clients_csv"),
     path("clients/export/pdf/", views.export_clients_pdf, name="export_clients_pdf"),
     path("invoices/", views.invoices_view, name="invoices"),
@@ -21,6 +22,21 @@ urlpatterns = [
     path("invoices/<int:invoice_id>/items/<int:item_id>/edit/", views.edit_invoice_item, name="edit_invoice_item"),
     path("invoices/<int:invoice_id>/items/<int:item_id>/delete/", views.delete_invoice_item, name="delete_invoice_item"),
     path("invoices/<int:invoice_id>/payments/add/", views.add_invoice_payment, name="add_invoice_payment"),
+    path(
+        "invoices/<int:invoice_id>/payments/<int:payment_id>/refund/",
+        views.refund_payment,
+        name="refund_payment",
+    ),
+    path(
+        "invoices/<int:invoice_id>/payments/<int:payment_id>/delete/",
+        views.delete_invoice_payment,
+        name="delete_invoice_payment",
+    ),
+    path(
+        "invoices/<int:invoice_id>/refunds/<int:refund_id>/delete/",
+        views.delete_payment_refund,
+        name="delete_payment_refund",
+    ),
     path(
         "invoices/<int:invoice_id>/payments/<int:payment_id>/receipt/pdf/",
         views.payment_receipt_pdf,
@@ -60,6 +76,10 @@ urlpatterns = [
     path("quotations/<int:quotation_id>/convert/", views.convert_quotation_to_invoice, name="convert_quotation_to_invoice"),
     path("inventory/", views.inventory_view, name="inventory"),
     path("inventory/add/", views.add_inventory, name="add_inventory"),
+	path("inventory/<int:product_id>/edit/", views.edit_inventory, name="edit_inventory"),
+	path("inventory/<int:product_id>/delete/", views.delete_inventory, name="delete_inventory"),
+	path("inventory/stock-movements/", views.stock_movements_view, name="stock_movements"),
+	path("inventory/products/<int:product_id>/stock/", views.adjust_stock, name="adjust_stock"),
     path("inventory/export/csv/", views.export_inventory_csv, name="export_inventory_csv"),
     path("inventory/export/pdf/", views.export_inventory_pdf, name="export_inventory_pdf"),
 
@@ -69,6 +89,8 @@ urlpatterns = [
     path("inventory/suppliers/<int:supplier_id>/", views.supplier_detail, name="supplier_detail"),
     path("inventory/suppliers/<int:supplier_id>/edit/", views.edit_supplier, name="edit_supplier"),
     path("inventory/supplier-prices/add/", views.add_supplier_price, name="add_supplier_price"),
+    path("inventory/supplier-prices/<int:price_id>/edit/", views.edit_supplier_price, name="edit_supplier_price"),
+    path("inventory/supplier-prices/<int:price_id>/delete/", views.delete_supplier_price, name="delete_supplier_price"),
     path("inventory/products/<int:product_id>/prices/", views.product_price_compare, name="product_price_compare"),
     path("expenses/", views.expenses_view, name="expenses"),
     path("expenses/add/", views.add_expense, name="add_expense"),

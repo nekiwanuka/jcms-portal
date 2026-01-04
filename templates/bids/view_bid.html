@@ -52,11 +52,15 @@
               <button class="btn btn-outline-secondary btn-sm" type="submit">Cancelled</button>
             </form>
 
-            {% if bid.status == 'won' and bid.quotation %}
-              <form method="post" action="{% url 'convert_quotation_to_invoice' bid.quotation.id %}" class="d-inline ms-auto">
+            {% if bid.quotation and bid.quotation.invoice %}
+              <a class="btn btn-outline-success btn-sm ms-auto" href="{% url 'invoice_detail' bid.quotation.invoice.id %}"><i class="bi bi-receipt"></i> Open Invoice</a>
+            {% elif bid.status == 'won' and bid.quotation and bid.quotation.status == 'accepted' %}
+              <form method="post" action="{% url 'convert_quotation_to_invoice' bid.quotation.id %}" class="d-inline ms-auto" onsubmit="return confirm('Convert this quotation to an invoice?');">
                 {% csrf_token %}
                 <button class="btn btn-success btn-sm" type="submit"><i class="bi bi-arrow-right-circle"></i> Convert to Invoice</button>
               </form>
+            {% elif bid.status == 'won' and bid.quotation %}
+              <div class="small text-muted ms-auto">To convert, mark the quotation Approved.</div>
             {% endif %}
           </div>
 
@@ -75,7 +79,7 @@
             </div>
             <div class="col-12 col-md-6">
               <div class="text-muted small">Bid Amount</div>
-              <div class="fw-semibold">{{ bid.amount }}</div>
+              <div class="fw-semibold">{{ bid.amount|money }}</div>
             </div>
             <div class="col-12 col-md-6">
               <div class="text-muted small">Closing Date</div>
@@ -155,7 +159,10 @@
             <td>{{ d.title|default:'(Untitled)' }}</td>
             <td>{{ d.doc_type_label }}</td>
             <td>{{ d.version }}</td>
-            <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a></td>
+            <td class="text-end">
+              <a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a>
+              <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'download_document' d.id %}?inline=1" data-title="Preview"><i class="bi bi-eye"></i></a>
+            </td>
           </tr>
           {% endfor %}
         </tbody>

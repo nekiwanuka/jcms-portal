@@ -13,18 +13,48 @@
 
   <div class="card shadow-sm">
     <div class="card-body">
-      <form method="post" class="row g-3">
+      <form method="post" class="row g-3" novalidate>
         {% csrf_token %}
-        {{ form.non_field_errors }}
-
-        {% for field in form %}
+        {% if form.non_field_errors %}
           <div class="col-12">
-            <label class="form-label">{{ field.label }}</label>
-            {{ field }}
-            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
-            {% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}
+            <div class="alert alert-danger mb-0">{{ form.non_field_errors }}</div>
           </div>
-        {% endfor %}
+        {% endif %}
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">{{ form.product.label }}</label>
+          {{ form.product }}
+          <div class="text-danger small">{{ form.product.errors }}</div>
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">{{ form.description.label }}</label>
+          {{ form.description }}
+          <div class="text-danger small">{{ form.description.errors }}</div>
+        </div>
+
+        <div class="col-12 col-md-4">
+          <label class="form-label">{{ form.quantity.label }}</label>
+          {{ form.quantity }}
+          <div class="text-danger small">{{ form.quantity.errors }}</div>
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">{{ form.unit_price.label }}</label>
+          {{ form.unit_price }}
+          <div class="text-danger small">{{ form.unit_price.errors }}</div>
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Total</label>
+          <input id="line_total" class="form-control" type="text" value="" readonly />
+          <div class="form-text">Auto-calculated from Qty × Unit Price.</div>
+        </div>
+
+        <div class="col-12">
+          <div class="form-check">
+            {{ form.vat_exempt }}
+            <label class="form-check-label" for="{{ form.vat_exempt.id_for_label }}">Not VAT eligible</label>
+          </div>
+          <div class="text-danger small">{{ form.vat_exempt.errors }}</div>
+        </div>
 
         <div class="col-12 d-flex gap-2">
           <button type="submit" class="btn btn-primary">Save</button>
@@ -33,4 +63,63 @@
       </form>
     </div>
   </div>
+
+  <script>
+    (function () {
+      const productEl = document.getElementById("{{ form.product.id_for_label }}");
+      const qtyEl = document.getElementById("{{ form.quantity.id_for_label }}");
+      const unitEl = document.getElementById("{{ form.unit_price.id_for_label }}");
+      const descEl = document.getElementById("{{ form.description.id_for_label }}");
+      const totalEl = document.getElementById("line_total");
+
+      function toNumber(val) {
+        const n = parseFloat((val || "").toString().replace(/,/g, ""));
+        return Number.isFinite(n) ? n : 0;
+      }
+
+      function fmt2(val) {
+        return val.toFixed(2);
+      }
+
+      function recalc() {
+        const qty = toNumber(qtyEl && qtyEl.value);
+        const unit = toNumber(unitEl && unitEl.value);
+        const total = qty * unit;
+        totalEl.value = fmt2(total);
+      }
+
+      async function fillFromProduct(productId) {
+        if (!productId) return;
+        try {
+          const res = await fetch(`/api/products/${productId}/`, { headers: { "Accept": "application/json" } });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (descEl && !String(descEl.value || "").trim()) {
+            const name = (data.name || "").toString().trim();
+            const pdesc = (data.description || "").toString().trim();
+            descEl.value = pdesc ? `${name} — ${pdesc}` : name;
+          }
+          if (unitEl && !String(unitEl.value || "").trim()) {
+            // DRF returns decimals as strings.
+            unitEl.value = (data.unit_price ?? "").toString();
+          }
+          recalc();
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      if (qtyEl) qtyEl.addEventListener("input", recalc);
+      if (unitEl) unitEl.addEventListener("input", recalc);
+      if (productEl) {
+        productEl.addEventListener("change", function () {
+          const val = (productEl.value || "").toString();
+          fillFromProduct(val);
+        });
+        // If a product is pre-selected (edit flows), hydrate once.
+        if (String(productEl.value || "").trim()) fillFromProduct(productEl.value);
+      }
+      recalc();
+    })();
+  </script>
 {% endblock %}

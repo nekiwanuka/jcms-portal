@@ -25,6 +25,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "branch",
             "sku",
             "name",
+            "description",
             "category",
             "supplier",
             "unit",

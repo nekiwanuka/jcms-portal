@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 
+{% load formatting %}
+
 {% block title %}Suppliers | Jambas Imaging{% endblock %}
 
 {% block content %}
@@ -49,6 +51,7 @@
               <th class="d-none d-md-table-cell">Contact</th>
               <th class="d-none d-lg-table-cell">Email</th>
               <th class="d-none d-lg-table-cell">Phone</th>
+              <th class="d-none d-lg-table-cell">Supplies / Rates</th>
               <th>Status</th>
               <th class="text-end">Actions</th>
             </tr>
@@ -65,6 +68,26 @@
                 <td class="d-none d-md-table-cell">{{ s.address|default:"-" }}</td>
                 <td class="d-none d-lg-table-cell">{{ s.email|default:"-" }}</td>
                 <td class="d-none d-lg-table-cell">{{ s.phone|default:"-" }}</td>
+                <td class="d-none d-lg-table-cell">
+                  {% if s.sample_prices %}
+                    {% for p in s.sample_prices %}
+                      <div class="small">
+                        <span class="fw-semibold">
+                          {% if p.item_name %}
+                            {{ p.item_name }}
+                          {% elif p.product %}
+                            {{ p.product.name }}
+                          {% else %}
+                            -
+                          {% endif %}
+                        </span>
+                        <span class="text-muted">@ {{ p.unit_price|money }} {{ p.currency }}</span>
+                      </div>
+                    {% endfor %}
+                  {% else %}
+                    <span class="text-muted small">No captured prices</span>
+                  {% endif %}
+                </td>
                 <td>
                   {% if s.is_active %}
                     <span class="badge text-bg-success">Active</span>

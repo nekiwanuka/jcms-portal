@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load formatting %}
 
 {% block title %}Quotation {{ quotation.number }} | Jambas Imaging{% endblock %}
 
@@ -6,12 +7,22 @@
   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
     <div>
       <h1 class="h4 mb-1">Quotation {{ quotation.number }}</h1>
-      <div class="text-muted">{{ quotation.client }} &nbsp;•&nbsp; {{ quotation.get_category_display }}</div>
+      <div class="text-muted"><a class="text-decoration-none" href="{% url 'client_history' quotation.client.id %}">{{ quotation.client }}</a> &nbsp;•&nbsp; {{ quotation.get_category_display }}</div>
     </div>
     <div class="d-flex gap-2">
       <a href="{% url 'quotations' %}" class="btn btn-outline-secondary btn-sm">Back</a>
       <a href="{% url 'quotation_pdf' quotation.id %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-filetype-pdf"></i> PDF</a>
+      <a href="{% url 'quotation_pdf' quotation.id %}?inline=1" class="btn btn-outline-secondary btn-sm js-doc-preview" data-title="Quotation PDF"><i class="bi bi-eye"></i> Preview</a>
       <a href="{% url 'proforma_pdf' quotation.id %}" class="btn btn-outline-primary btn-sm"><i class="bi bi-filetype-pdf"></i> Proforma PDF</a>
+      <a href="{% url 'proforma_pdf' quotation.id %}?inline=1" class="btn btn-outline-secondary btn-sm js-doc-preview" data-title="Proforma PDF"><i class="bi bi-eye"></i> Preview</a>
+      {% if quotation.invoice %}
+        <a href="{% url 'invoice_detail' quotation.invoice.id %}" class="btn btn-outline-success btn-sm"><i class="bi bi-receipt"></i> Open Invoice</a>
+      {% elif quotation.status == 'accepted' %}
+        <form method="post" action="{% url 'convert_quotation_to_invoice' quotation.id %}" class="d-inline" onsubmit="return confirm('Convert this quotation to an invoice?');">
+          {% csrf_token %}
+          <button class="btn btn-success btn-sm" type="submit"><i class="bi bi-arrow-right-circle"></i> Convert</button>
+        </form>
+      {% endif %}
       <form method="post" action="{% url 'send_quotation' quotation.id %}" class="d-inline">
         {% csrf_token %}
         <button type="submit" class="btn btn-outline-success btn-sm"><i class="bi bi-envelope"></i> Send PDF</button>
@@ -42,17 +53,17 @@
           <div class="row">
             <div class="col-6 col-md-4">
               <div class="small text-muted">Subtotal</div>
-              <div class="fw-semibold">{{ quotation.currency }} {{ quotation.subtotal_amount|floatformat:2 }}</div>
+              <div class="fw-semibold">{{ quotation.currency }} {{ quotation.subtotal_amount|money }}</div>
             </div>
             <div class="col-6 col-md-4">
               <div class="small text-muted">Discount</div>
-              <div class="fw-semibold">{{ quotation.currency }} {{ quotation.discount_amount|floatformat:2 }}</div>
+              <div class="fw-semibold">{{ quotation.currency }} {{ quotation.discount_amount|money }}</div>
             </div>
             <div class="col-6 col-md-4">
               <div class="small text-muted">VAT</div>
               <div class="fw-semibold">
                 {% if quotation.vat_enabled %}
-                  {{ quotation.currency }} {{ quotation.vat_amount_amount|floatformat:2 }}
+                  {{ quotation.currency }} {{ quotation.vat_amount_amount|money }}
                 {% else %}
                   Not applied
                 {% endif %}
@@ -60,7 +71,7 @@
             </div>
             <div class="col-12 mt-2">
               <div class="small text-muted">Total</div>
-              <div class="h5 mb-0">{{ quotation.currency }} {{ quotation.total_amount|floatformat:2 }}</div>
+              <div class="h5 mb-0">{{ quotation.currency }} {{ quotation.total_amount|money }}</div>
             </div>
           </div>
 
@@ -86,11 +97,15 @@
               <button class="btn btn-outline-danger btn-sm" type="submit">Mark Rejected</button>
             </form>
 
-            {% if quotation.status == 'accepted' and not quotation.invoice_id %}
-              <form method="post" action="{% url 'convert_quotation_to_invoice' quotation.id %}" class="d-inline ms-auto">
+            {% if quotation.invoice %}
+              <a class="btn btn-outline-success btn-sm ms-auto" href="{% url 'invoice_detail' quotation.invoice.id %}"><i class="bi bi-receipt"></i> Open Invoice</a>
+            {% elif quotation.status == 'accepted' %}
+              <form method="post" action="{% url 'convert_quotation_to_invoice' quotation.id %}" class="d-inline ms-auto" onsubmit="return confirm('Convert this quotation to an invoice?');">
                 {% csrf_token %}
                 <button class="btn btn-success btn-sm" type="submit"><i class="bi bi-arrow-right-circle"></i> Convert to Invoice</button>
               </form>
+            {% else %}
+              <div class="small text-muted ms-auto">To convert, mark the quotation Approved.</div>
             {% endif %}
           </div>
         </div>
@@ -120,7 +135,10 @@
                     <td>{{ d.title|default:'(Untitled)' }}</td>
                     <td>{{ d.doc_type_label }}</td>
                     <td>{{ d.version }}</td>
-                    <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a></td>
+                    <td class="text-end">
+                      <a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a>
+                      <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'download_document' d.id %}?inline=1" data-title="Preview"><i class="bi bi-eye"></i></a>
+                    </td>
                   </tr>
                 {% empty %}
                   <tr><td colspan="4" class="text-center text-muted py-3">No documents attached.</td></tr>
@@ -158,8 +176,8 @@
                 <td class="fw-semibold">{{ it.item_name|default:'-' }}</td>
                 <td>{{ it.description|default:'-' }}</td>
                 <td class="text-end">{{ it.quantity }}</td>
-                <td class="text-end">{{ quotation.currency }} {{ it.unit_price|floatformat:2 }}</td>
-                <td class="text-end">{{ quotation.currency }} {{ it.total_price|floatformat:2 }}</td>
+                <td class="text-end">{{ quotation.currency }} {{ it.unit_price|money }}</td>
+                <td class="text-end">{{ quotation.currency }} {{ it.total_price|money }}</td>
                 <td class="text-end">
                   <a class="btn btn-outline-primary btn-sm" href="{% url 'edit_quotation_item' quotation.id it.id %}"><i class="bi bi-pencil"></i></a>
                   <form method="post" action="{% url 'delete_quotation_item' quotation.id it.id %}" class="d-inline">

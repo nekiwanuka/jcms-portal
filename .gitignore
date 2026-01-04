@@ -2,9 +2,13 @@
 __pycache__/
 *.py[cod]
 *.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 .env
 .env.local
 /staticfiles/
 /media/
+.vscode/
+backups/
 .DS_Store
 

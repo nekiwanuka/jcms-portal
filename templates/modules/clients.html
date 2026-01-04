@@ -11,6 +11,7 @@
     <div class="d-flex gap-2">
       <a href="{% url 'export_clients_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
       <a href="{% url 'export_clients_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
+      <a href="{% url 'export_clients_pdf' %}{{ qs }}{% if qs %}&{% else %}?{% endif %}inline=1" class="btn btn-outline-secondary btn-sm js-doc-preview" data-title="Clients PDF">Preview PDF</a>
       <a href="{% url 'add_client' %}" class="btn btn-primary btn-sm">+ Add Client</a>
     </div>
   </div>
@@ -108,7 +109,9 @@
             {% for c in clients %}
               <tr>
                 <td>
-                  <div class="fw-semibold">{{ c.company_name|default:c.full_name|default:"Client" }}</div>
+                  <div class="fw-semibold">
+                    <a class="text-decoration-none" href="{% url 'client_history' c.id %}">{{ c.company_name|default:c.full_name|default:"Client" }}</a>
+                  </div>
                   {% if c.contact_person %}<div class="text-muted small">{{ c.contact_person }}</div>{% endif %}
                 </td>
                 <td><span class="badge text-bg-secondary">{{ c.get_client_type_display }}</span></td>

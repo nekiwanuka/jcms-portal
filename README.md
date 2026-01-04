@@ -7,16 +7,30 @@ System documentation: see [docs/SYSTEM.md](docs/SYSTEM.md).
 ## Local Development (Windows)
 
 1. Activate venv
-   - PowerShell: `C:\Users\NEKIWANUKA\Desktop\jcms_Portal\.venv\Scripts\Activate.ps1`
+   - PowerShell: `C:\Users\NEKIWANUKA\Desktop\jcms_Portal\venv\Scripts\Activate.ps1`
 
 2. Create `.env`
    - Copy: `.env.example` → `.env`
 
 3. Run migrations
-   - `C:/Users/NEKIWANUKA/Desktop/jcms_Portal/.venv/Scripts/python.exe manage.py migrate`
+   - `C:/Users/NEKIWANUKA/Desktop/jcms_Portal/venv/Scripts/python.exe manage.py migrate`
 
 4. Start server
-   - `C:/Users/NEKIWANUKA/Desktop/jcms_Portal/.venv/Scripts/python.exe manage.py runserver`
+   - `C:/Users/NEKIWANUKA/Desktop/jcms_Portal/venv/Scripts/python.exe manage.py runserver`
+
+### Reset test data (fresh start)
+
+If you entered data only for testing and want to start over:
+
+- Reset database (backs up `db.sqlite3` into `backups/` first):
+   - `./.venv/Scripts/python.exe ./manage.py reset_data`
+
+- Reset database **and** delete uploaded files under `media/`:
+   - `./.venv/Scripts/python.exe ./manage.py reset_data --include-media`
+
+After resetting, re-create an admin account:
+
+- `./.venv/Scripts/python.exe ./manage.py createsuperuser`
 
 ### Login + OTP
 

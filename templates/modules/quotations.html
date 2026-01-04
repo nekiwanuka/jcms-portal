@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load formatting %}
 
 {% block title %}Quotations | Jambas Imaging{% endblock %}
 
@@ -79,13 +80,15 @@
               <td class="fw-semibold">{{ q.number }}</td>
               <td>{{ q.client }}</td>
               <td>{{ q.category_label }}</td>
-              <td>{{ q.currency }} {{ q.total_amount|floatformat:2 }}</td>
+              <td>{{ q.currency }} {{ q.total_amount|money }}</td>
               <td>{{ q.valid_until|date:'Y-m-d'|default:'-' }}</td>
               <td><span class="badge {{ q.badge_class }}">{{ q.get_status_display }}</span></td>
               <td class="text-end">
                 <a class="btn btn-outline-primary btn-sm" href="{% url 'quotation_detail' q.id %}"><i class="bi bi-eye"></i> View</a>
-                {% if q.status == 'accepted' and not q.invoice_id %}
-                  <form method="post" action="{% url 'convert_quotation_to_invoice' q.id %}" class="d-inline">
+                {% if q.invoice %}
+                  <a class="btn btn-outline-success btn-sm" href="{% url 'invoice_detail' q.invoice.id %}" title="Open invoice"><i class="bi bi-receipt"></i> Invoice</a>
+                {% elif q.status == 'accepted' %}
+                  <form method="post" action="{% url 'convert_quotation_to_invoice' q.id %}" class="d-inline" onsubmit="return confirm('Convert this quotation to an invoice?');">
                     {% csrf_token %}
                     <button class="btn btn-success btn-sm" type="submit"><i class="bi bi-arrow-right-circle"></i> Convert</button>
                   </form>

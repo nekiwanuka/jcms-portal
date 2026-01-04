@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load formatting %}
 
 {% block title %}Receipts | Jambas Imaging{% endblock %}
 
@@ -39,11 +40,18 @@
                 </td>
                 <td>{{ p.invoice.client }}</td>
                 <td>{{ p.method_label }}</td>
-                <td class="text-end">{{ p.invoice.currency }} {{ p.amount }}</td>
+                <td class="text-end">
+                  <div>{{ p.invoice.currency }} {{ p.net_amount|money }}</div>
+                  {% if p.refunded_total and p.refunded_total > 0 %}
+                    <div class="text-muted small">Refunded: {{ p.invoice.currency }} {{ p.refunded_total|money }}</div>
+                  {% endif %}
+                </td>
                 <td class="text-end">
                   <a class="btn btn-outline-primary btn-sm" href="{% url 'payment_receipt_pdf' p.invoice.id p.id %}">PDF</a>
+                  <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'payment_receipt_pdf' p.invoice.id p.id %}?inline=1" data-title="Receipt PDF"><i class="bi bi-eye"></i></a>
                   {% if p.archived_receipt_doc %}
                     <a class="btn btn-outline-secondary btn-sm" href="{% url 'download_document' p.archived_receipt_doc.id %}" title="Download archived receipt"><i class="bi bi-archive"></i></a>
+                    <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'download_document' p.archived_receipt_doc.id %}?inline=1" data-title="Archived Receipt"><i class="bi bi-eye"></i></a>
                   {% endif %}
                   <form method="post" action="{% url 'send_payment_receipt' p.invoice.id p.id %}" class="d-inline">
                     {% csrf_token %}

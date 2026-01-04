@@ -4,6 +4,7 @@ from django.db.models import Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.conf import settings
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 from .forms import DocumentForm
 from .models import Document
@@ -98,6 +99,7 @@ def upload_document(request):
 
 
 @login_required
+@xframe_options_sameorigin
 def download_document(request, doc_id: int):
 	doc = get_object_or_404(Document.objects.select_related("client"), pk=doc_id)
 	if not doc.file:

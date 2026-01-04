@@ -28,6 +28,16 @@ class QuotationForm(forms.ModelForm):
 
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
+		# VAT: checkbox to enable/disable VAT; rate fixed at 18% when enabled.
+		if "vat_enabled" in self.fields:
+			self.fields["vat_enabled"].widget = forms.CheckboxInput()
+			self.fields["vat_enabled"].required = False
+			self.fields["vat_enabled"].label = "Apply VAT (18%)"
+			self.fields["vat_enabled"].help_text = "Tick to apply 18% VAT; leave unticked for no VAT."
+		if "vat_rate" in self.fields:
+			# Hide the raw rate field; it is derived from the checkbox.
+			self.fields["vat_rate"].widget = forms.HiddenInput()
+			self.fields["vat_rate"].required = False
 		for field in self.fields.values():
 			widget = field.widget
 			if widget.__class__.__name__ in {"CheckboxInput"}:
@@ -57,6 +67,10 @@ class QuotationForm(forms.ModelForm):
 
 	def clean(self):
 		cleaned = super().clean()
+		# Derive VAT rate from the checkbox: 18% when enabled, 0% otherwise.
+		enabled = bool(cleaned.get("vat_enabled"))
+		cleaned["vat_enabled"] = enabled
+		cleaned["vat_rate"] = Decimal("0.18") if enabled else Decimal("0.00")
 		category = cleaned.get("category")
 		category_other = (cleaned.get("category_other") or "").strip()
 		if category == Quotation.Category.OTHER:
@@ -74,6 +88,22 @@ class QuotationItemForm(forms.ModelForm):
 
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
+		if "unit_price" in self.fields:
+			self.fields["unit_price"].required = False
+		# Make line entry clear: require a description/reason.
+		if "description" in self.fields:
+			# Let it be auto-filled from product; enforce in clean() for non-product lines.
+			self.fields["description"].required = False
+			self.fields["description"].label = "Description"
+		# Keep numeric inputs clean (no pre-filled 0.00 / 1.00 on create).
+		if not self.is_bound and not getattr(self.instance, "pk", None):
+			for name in ("quantity", "unit_price"):
+				if name in self.fields:
+					self.fields[name].initial = ""
+					self.fields[name].widget.attrs.setdefault("placeholder", "")
+		for name in ("quantity", "unit_price"):
+			if name in self.fields:
+				self.fields[name].widget.attrs.setdefault("step", "0.01")
 		for field in self.fields.values():
 			widget = field.widget
 			if widget.__class__.__name__ in {"CheckboxInput"}:
@@ -82,3 +112,29 @@ class QuotationItemForm(forms.ModelForm):
 				widget.attrs.setdefault("class", "form-select")
 			else:
 				widget.attrs.setdefault("class", "form-control")
+
+	def clean(self):
+		cleaned = super().clean()
+		product = cleaned.get("product")
+		item_name = (cleaned.get("item_name") or "").strip()
+		description = (cleaned.get("description") or "").strip()
+		unit_price = cleaned.get("unit_price")
+		prod_desc = (getattr(product, "description", "") or "").strip() if product else ""
+
+		if product and not item_name:
+			cleaned["item_name"] = product.name
+			item_name = cleaned["item_name"]
+		if product and not description:
+			cleaned["description"] = f"{product.name} — {prod_desc}" if prod_desc else product.name
+			description = cleaned["description"]
+		if product and unit_price is None:
+			cleaned["unit_price"] = product.unit_price
+		# If no product is selected, unit price must be provided.
+		if not product and cleaned.get("unit_price") is None:
+			self.add_error("unit_price", "Please enter a unit price.")
+
+		if not (product or item_name or description):
+			self.add_error("item_name", "Select a product or enter item details.")
+		if not description:
+			self.add_error("description", "Please enter a description/reason for this line.")
+		return cleaned

@@ -11,6 +11,7 @@
     <div class="d-flex gap-2">
       <a href="{% url 'export_expenses_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
       <a href="{% url 'export_expenses_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
+      <a href="{% url 'export_expenses_pdf' %}{{ qs }}{% if qs %}&{% else %}?{% endif %}inline=1" class="btn btn-outline-secondary btn-sm js-doc-preview" data-title="Expenses PDF">Preview PDF</a>
       <a href="{% url 'add_expense' %}" class="btn btn-primary btn-sm">+ New Expense</a>
     </div>
   </div>
@@ -104,7 +105,7 @@
                   <div class="fw-semibold">{{ e.description }}</div>
                   {% if e.reference %}<div class="small text-muted">Ref: {{ e.reference }}</div>{% endif %}
                 </td>
-                <td class="text-end">{{ e.amount }}</td>
+                <td class="text-end">{{ e.amount|money }}</td>
               </tr>
             {% empty %}
               <tr>

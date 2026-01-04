@@ -4,8 +4,8 @@
     <p>Hello {{ invoice.client }},</p>
     <p>Please find your invoice <strong>{{ invoice.number }}</strong> attached as a PDF.</p>
     <p>
-      <strong>Total:</strong> {{ invoice.currency }} {{ invoice.total }}<br />
-      <strong>Outstanding balance:</strong> {{ invoice.currency }} {{ invoice.outstanding_balance }}
+      <strong>Total:</strong> {{ invoice.currency }} {{ invoice.total|money }}<br />
+      <strong>Outstanding balance:</strong> {{ invoice.currency }} {{ invoice.outstanding_balance|money }}
     </p>
     <p>
       <strong>Prepared by:</strong> {{ invoice.prepared_by_name|default:invoice.created_by.email|default:"-" }}<br />

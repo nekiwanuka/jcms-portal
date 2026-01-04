@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block title %}Not Found | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="container" style="max-width: 820px;">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body p-4">
+        <h1 class="h5 mb-2">Page not found</h1>
+        <div class="text-muted mb-3">
+          The page you requested doesn’t exist.
+        </div>
+
+        {% if request.user.is_authenticated %}
+          <a class="btn btn-primary btn-sm" href="{% url 'dashboard' %}">Go to Dashboard</a>
+        {% else %}
+          <a class="btn btn-primary btn-sm" href="{% url 'accounts:login' %}">Go to Login</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}

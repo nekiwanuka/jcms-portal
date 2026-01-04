@@ -25,12 +25,30 @@ class Supplier(models.Model):
 
 
 class SupplierProductPrice(models.Model):
-	"""Captures supplier pricing per product for comparison."""
+	"""Captures what a supplier offers and at what rate.
+
+	Can be linked to an inventory Product for stock items, or just use
+	`item_name` for simple free-text supplies (independent supplies module).
+	"""
 
 	supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name="product_prices")
-	product = models.ForeignKey("inventory.Product", on_delete=models.CASCADE, related_name="supplier_prices")
+	product = models.ForeignKey(
+		"inventory.Product",
+		on_delete=models.SET_NULL,
+		null=True,
+		blank=True,
+		related_name="supplier_prices",
+	)
+	# Free-text description of what they supply (used when no Product is linked).
+	item_name = models.CharField(max_length=255, blank=True, default="")
+	# Human unit label for this price, e.g. "kg", "meter", "box".
+	quantity_unit = models.CharField(max_length=40, blank=True, default="")
 	currency = models.CharField(max_length=10, default="UGX")
 	unit_price = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+	# Minimum order quantity for this price break (optional).
+	min_order_quantity = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+	# Optional lead time for this specific supply in days.
+	lead_time_days = models.PositiveIntegerField(null=True, blank=True)
 	quoted_at = models.DateField(default=timezone.localdate)
 	notes = models.TextField(blank=True, default="")
 	is_active = models.BooleanField(default=True)
@@ -44,15 +62,21 @@ class SupplierProductPrice(models.Model):
 		]
 
 	def __str__(self):
-		return f"{self.supplier} - {self.product} @ {self.unit_price} {self.currency}"
+		label = self.item_name or (str(self.product) if self.product_id else "-")
+		return f"{self.supplier} - {label} @ {self.unit_price} {self.currency}"
 
 
 class ProductCategory(models.Model):
 	class CategoryType(models.TextChoices):
-		PRINTING = "printing", "Printing"
-		IT = "it", "IT"
-		MEDICAL = "medical", "Medical"
+		ITPRODUCT = "itproduct", "IT PRODUCTS"
+		PRINTING_MATERIAL = "printing_material", "PRINTING MATERIAL"
+		BRANDING_MATERIAL = "branding_material", "BRANDING MATERIAL"
+		PROMOTIONAL_MATERIAL = "promotional_material", "PROMOTIONAL MATERIAL"
+		MACHINERY = "machinery", "MACHINERY"
+		STATIONERY = "stationery", "STATIONERY"
 		PPE = "ppe", "PPE"
+		GENERAL = "general", "GENERAL"
+		OTHER = "other", "OTHER"
 
 	name = models.CharField(max_length=120, unique=True)
 	category_type = models.CharField(max_length=20, choices=CategoryType.choices)
@@ -77,14 +101,16 @@ class Product(models.Model):
 
 	sku = models.CharField(max_length=60, unique=True, blank=True)
 	name = models.CharField(max_length=255)
+	description = models.TextField(blank=True, default="")
 	category = models.ForeignKey(ProductCategory, on_delete=models.PROTECT, related_name="products")
 	supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
 
 	unit = models.CharField(max_length=40, default="pcs")
-	unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+	unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Price")
+	vat_exempt = models.BooleanField(default=False)
 
-	stock_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-	low_stock_threshold = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+	stock_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Quantity")
+	low_stock_threshold = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Reorder level")
 
 	is_active = models.BooleanField(default=True)
 
@@ -94,6 +120,10 @@ class Product(models.Model):
 	@property
 	def is_low_stock(self) -> bool:
 		return self.stock_quantity <= self.low_stock_threshold
+
+	@property
+	def reorder_level(self):
+		return self.low_stock_threshold
 
 	def __str__(self):
 		return f"{self.sku} - {self.name}"

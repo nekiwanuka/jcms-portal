@@ -59,7 +59,7 @@ INSTALLED_APPS = [
     'django_filters',
 
     # Local apps
-    'core',
+    'core.apps.CoreConfig',
     'accounts.apps.AccountsConfig',
     'clients',
     'inventory',
@@ -76,6 +76,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'core.middleware.HideDebug404Middleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'accounts.middleware.OtpRequiredMiddleware',
@@ -97,6 +98,15 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
             ],
+            # Make `money` filter available in all templates without needing `{% load formatting %}`.
+            'builtins': [
+                'core.templatetags.formatting',
+            ],
+            # Explicitly register custom template tag libraries so they can be
+            # loaded via `{% load formatting %}` in templates.
+            'libraries': {
+                'formatting': 'core.templatetags.formatting',
+            },
         },
     },
 ]
@@ -117,6 +127,14 @@ DATABASES = {
         'PORT': os.getenv('DB_PORT', ''),
     }
 }
+
+if DATABASES["default"]["ENGINE"].endswith("sqlite3"):
+    DATABASES["default"].setdefault("OPTIONS", {})
+    # Wait for a lock instead of failing immediately (helps on Windows).
+    DATABASES["default"]["OPTIONS"].setdefault(
+        "timeout",
+        int(os.getenv("SQLITE_TIMEOUT", "20")),
+    )
 
 
 # Password validation

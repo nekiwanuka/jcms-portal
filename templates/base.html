@@ -14,12 +14,12 @@
         --header-height: 75px;
         --sidebar-width: 200px;
         --sidebar-top-gap: 1px;
-        /* Bootstrap-aligned blue theme */
-        --primary-blue: #0880f9;
-        --primary-dark: #0880f9;
+        /* Bootstrap primary theme */
+        --primary-blue: var(--bs-primary);
+        --primary-dark: var(--bs-primary);
 
-        /* Blue sidebar (not dark grey) */
-        --sidebar-bg: #1951ac;
+        /* Blue sidebar */
+        --sidebar-bg: var(--bs-primary);
         --sidebar-hover: rgba(148, 148, 150, 0.854);
 
         /* Soft grey page background */
@@ -31,6 +31,9 @@
         padding: 0;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         background: var(--soft-grey);
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
       }
 
       /* Fixed header */
@@ -40,7 +43,7 @@
         left: 0;
         right: 0;
         height: var(--header-height);
-        background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-dark) 100%);
+        background: var(--primary-blue);
         box-shadow: 0 2px 12px rgba(0,0,0,0.15);
         z-index: 1030;
         display: flex;
@@ -57,6 +60,19 @@
         flex: 0 0 auto;
         position: relative;
         z-index: 2;
+      }
+
+      .app-header .header-center {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        width: 100%;
+        pointer-events: none;
+        z-index: 1;
       }
 
       .app-header .logo-img {
@@ -76,19 +92,19 @@
         white-space: nowrap;
       }
 
-      .app-header .header-title {
-        position: absolute;
-        left: 50%;
-        transform: translateX(-50%);
+      .app-header .company-block {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
         text-align: center;
-        width: min(760px, calc(100% - 520px));
-        font-size: 1.1rem;
-        font-weight: 700;
-        letter-spacing: -0.3px;
+        gap: 0.1rem;
+        line-height: 1.1;
+      }
+
+      .app-header .company-details {
+        font-size: 0.75rem;
+        opacity: 0.85;
         white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        z-index: 1;
       }
 
       .app-header .header-right {
@@ -101,28 +117,6 @@
         z-index: 2;
       }
 
-      .app-header .datetime-display {
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        background: transparent;
-        padding: 0;
-        border-radius: 0;
-        backdrop-filter: none;
-        gap: 0.5rem;
-        line-height: 1.1;
-      }
-
-      .app-header .datetime-display .time {
-        font-size: 0.95rem;
-        font-weight: 600;
-        font-family: 'Courier New', monospace;
-      }
-
-      .app-header .datetime-display .date {
-        font-size: 0.85rem;
-        opacity: 0.9;
-      }
 
       .app-header .user-section {
         display: flex;
@@ -223,7 +217,7 @@
         margin-left: 0;
         margin-top: var(--header-height);
         padding: 2rem;
-        min-height: calc(100vh - var(--header-height));
+        flex: 1 0 auto;
       }
 
       .has-sidebar .app-main {
@@ -233,11 +227,12 @@
       /* Footer */
       .app-footer {
         margin-left: 0;
-        background: var(--sidebar-bg);
-        color: rgba(255,255,255,0.7);
+        background: var(--primary-blue);
+        color: #ffffff;
         padding: 1.5rem;
         text-align: center;
         font-size: 0.85rem;
+        flex-shrink: 0;
       }
 
       .has-sidebar .app-footer {
@@ -315,6 +310,14 @@
           display: none;
         }
 
+        .app-header .company-details {
+          display: none;
+        }
+
+        .app-header .header-center {
+          display: none;
+        }
+
         .app-main {
           padding: 1rem;
         }
@@ -333,16 +336,14 @@
           <source srcset="{% static 'images/jambas-logo-white.svg' %}" type="image/svg+xml" />
           <img src="{% static 'images/jambas-company-logo.png' %}" alt="Jambas Imaging" class="logo-img" />
         </picture>
-
-        <div class="datetime-display">
-          <div class="date" id="currentDate">January 1, 2026</div>
-          <div class="time" id="currentTime">00:00:00</div>
-        </div>
-
-        <div class="company-name"></div>
       </div>
 
-      <div class="header-title"> Jambas Imaging Business Management Portal</div>
+      <div class="header-center">
+        <div class="company-block">
+          <div class="company-name">JAMBAS BUSINESS MANAGEMENT PORTAL</div>
+          <div class="company-details">Tel: +256 200 902 849  |  info@jambasimaging.com</div>
+        </div>
+      </div>
 
       <div class="header-right">
         <div class="user-section">
@@ -477,41 +478,30 @@
     <!-- Footer -->
     <footer class="app-footer">
       <div>
-        <strong>JAMBAS IMAGING (U) LTD</strong> - Integrated solutions in printing, branding, IT products, IT support services, safety gears, medical supplies, and stationery.
+        JAMBAS IMAGING (U) LTD is a Ugandan-based company providing integrated solutions in printing, branding, IT products, IT support services, safety gears, medical supplies, and stationery.
       </div>
-      <div class="mt-2">
-        <i class="bi bi-telephone"></i> +256 200 902 849 &nbsp;|&nbsp;
-        <i class="bi bi-envelope"></i> info@jambasimaging.com &nbsp;|&nbsp;
-        <i class="bi bi-geo-alt"></i> F-26, Nasser Road Mall, Kampala – Uganda
-      </div>
-      <div class="mt-2">
-        Developed and managed by <strong>Devtown Technologies</strong> &nbsp;|&nbsp;
-        <a href="https://devtownhosting.com" target="_blank" rel="noopener">devtownhosting.com</a> &nbsp;|&nbsp;
-        <i class="bi bi-telephone"></i> +256 784 509 809
-      </div>
+      <div class="mt-2">Tel: +256 200 902 849</div>
+      <div>Email: info@jambasimaging.com</div>
+      <div>Location: F-26, Nasser Road Mall, Kampala – Uganda</div>
     </footer>
+
+    <!-- Document preview modal (same-tab popup) -->
+    <div class="modal fade" id="docPreviewModal" tabindex="-1" aria-labelledby="docPreviewTitle" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="docPreviewTitle">Preview</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body p-0">
+            <iframe id="docPreviewFrame" class="w-100 border-0" style="height: 75vh;" src="about:blank" title="Document preview"></iframe>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-      // Live clock update
-      function updateDateTime() {
-        const now = new Date();
-        
-        // Time
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        const seconds = String(now.getSeconds()).padStart(2, '0');
-        document.getElementById('currentTime').textContent = `${hours}:${minutes}:${seconds}`;
-        
-        // Date
-        const options = { year: 'numeric', month: 'long', day: 'numeric' };
-        document.getElementById('currentDate').textContent = now.toLocaleDateString('en-US', options);
-      }
-
-      // Update every second
-      updateDateTime();
-      setInterval(updateDateTime, 1000);
-
       // Sidebar toggle for mobile
       const sidebarToggle = document.getElementById('sidebarToggle');
       const appSidebar = document.getElementById('appSidebar');
@@ -540,6 +530,88 @@
           if (link.getAttribute('href') === currentPath) {
             link.classList.add('active');
           }
+        });
+
+        // Document/PDF preview (same-tab popup modal)
+        const previewModalEl = document.getElementById('docPreviewModal');
+        const previewFrame = document.getElementById('docPreviewFrame');
+        const previewTitle = document.getElementById('docPreviewTitle');
+        if (previewModalEl && previewFrame && window.bootstrap && window.bootstrap.Modal) {
+          const bsModal = window.bootstrap.Modal.getOrCreateInstance(previewModalEl);
+
+          document.querySelectorAll('.js-doc-preview').forEach(function (el) {
+            el.addEventListener('click', function (e) {
+              const url = el.getAttribute('data-url') || el.getAttribute('href');
+              if (!url) return;
+              e.preventDefault();
+              if (previewTitle) {
+                previewTitle.textContent = el.getAttribute('data-title') || 'Preview';
+              }
+              previewFrame.src = url;
+              bsModal.show();
+            });
+          });
+
+          previewModalEl.addEventListener('hidden.bs.modal', function () {
+            previewFrame.src = 'about:blank';
+          });
+        }
+
+        // Money input formatting: for any input with data-money-input="1",
+        // format as 1,000.00 style on blur while keeping raw numbers for
+        // Django by stripping commas on submit. Uses string parsing only to
+        // avoid floating-point rounding issues.
+        const moneyInputs = document.querySelectorAll('[data-money-input="1"]');
+
+        function normalizeNumber(value) {
+          if (!value) return '';
+          let raw = String(value).replace(/,/g, '').trim();
+          if (!raw) return '';
+
+          let negative = false;
+          if (raw[0] === '-') {
+            negative = true;
+            raw = raw.slice(1);
+          }
+
+          // Split on first dot; ignore any extra dots/commas.
+          const parts = raw.split(/[.,]/);
+          let intPart = (parts[0] || '0').replace(/\D/g, '');
+          let fracPart = (parts[1] || '').replace(/\D/g, '');
+
+          if (!intPart) intPart = '0';
+          fracPart = (fracPart + '00').slice(0, 2); // exactly 2 digits
+
+          // Add thousands separators to integer part
+          intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+          return (negative ? '-' : '') + intPart + '.' + fracPart;
+        }
+
+        moneyInputs.forEach(function (input) {
+          if (input.value) {
+            input.value = normalizeNumber(input.value);
+          }
+
+          input.addEventListener('blur', function () {
+            input.value = normalizeNumber(input.value);
+          });
+
+          input.addEventListener('focus', function () {
+            if (!input.value) return;
+            input.value = String(input.value).replace(/,/g, '');
+          });
+        });
+
+        document.querySelectorAll('form').forEach(function (form) {
+          form.addEventListener('submit', function () {
+            const scopedInputs = form.querySelectorAll('[data-money-input="1"]');
+            scopedInputs.forEach(function (input) {
+              if (input.value) {
+                input.value = String(input.value).replace(/,/g, '');
+              }
+            });
+          });
         });
       });
     </script>

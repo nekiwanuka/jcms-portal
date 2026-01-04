@@ -1,0 +1,19 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'admin/custom_admin.css' %}">
+{% endblock %}
+
+{% block branding %}
+  <h1 id="site-name" class="jambas-admin-brand">
+    <a href="{% url 'admin:index' %}" class="jambas-admin-brand-link">
+      <picture class="jambas-admin-logo">
+        <source srcset="{% static 'images/jambas-logo-white.svg' %}" type="image/svg+xml" />
+        <img src="{% static 'images/jambas-company-logo.png' %}" alt="Jambas" />
+      </picture>
+      <span class="jambas-admin-title">Backend Engine</span>
+    </a>
+  </h1>
+{% endblock %}

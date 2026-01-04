@@ -11,6 +11,7 @@
     <div class="d-flex gap-2">
       <a href="{% url 'export_appointments_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
       <a href="{% url 'export_appointments_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
+      <a href="{% url 'export_appointments_pdf' %}{{ qs }}{% if qs %}&{% else %}?{% endif %}inline=1" class="btn btn-outline-secondary btn-sm js-doc-preview" data-title="Appointments PDF">Preview PDF</a>
       <a href="{% url 'add_appointment' %}" class="btn btn-primary btn-sm">+ New Appointment</a>
     </div>
   </div>

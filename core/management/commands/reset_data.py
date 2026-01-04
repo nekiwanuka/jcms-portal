@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+import shutil
+from datetime import datetime
+from pathlib import Path
+
+from django.conf import settings
+from django.core.management import BaseCommand, call_command
+
+
+class Command(BaseCommand):
+	help = (
+		"Reset all application data for a fresh start. "
+		"For SQLite, this backs up and deletes the database file, then re-runs migrations. "
+		"For other databases, it runs `flush` (destructive)."
+	)
+
+	def add_arguments(self, parser):
+		parser.add_argument(
+			"--include-media",
+			action="store_true",
+			help="Also delete all uploaded files under MEDIA_ROOT.",
+		)
+		parser.add_argument(
+			"--no-backup",
+			action="store_true",
+			help="Skip backing up the SQLite DB file before deleting it.",
+		)
+
+	def handle(self, *args, **options):
+		include_media: bool = bool(options.get("include_media"))
+		no_backup: bool = bool(options.get("no_backup"))
+
+		engine = settings.DATABASES.get("default", {}).get("ENGINE", "")
+		name = settings.DATABASES.get("default", {}).get("NAME", "")
+
+		self.stdout.write(self.style.WARNING("This will DELETE all data."))
+
+		if engine.endswith("sqlite3") and name:
+			db_path = Path(str(name)).expanduser().resolve()
+			# Django may already have an open connection to SQLite. On Windows, an open
+			# file cannot be deleted, so close connections first.
+			try:
+				from django.db import connections
+				connections.close_all()
+			except Exception:
+				pass
+			if db_path.exists() and not no_backup:
+				backup_dir = (Path(settings.BASE_DIR) / "backups").resolve()
+				backup_dir.mkdir(parents=True, exist_ok=True)
+				ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+				backup_path = backup_dir / f"db.sqlite3.{ts}.bak"
+				shutil.copy2(db_path, backup_path)
+				self.stdout.write(self.style.SUCCESS(f"Backed up DB to: {backup_path}"))
+
+			# Remove SQLite sidecar files if present.
+			for sidecar in (db_path.with_suffix(db_path.suffix + "-wal"), db_path.with_suffix(db_path.suffix + "-shm"), db_path.with_suffix(db_path.suffix + "-journal")):
+				try:
+					if sidecar.exists():
+						sidecar.unlink()
+				except Exception:
+					pass
+
+			if db_path.exists():
+				try:
+					db_path.unlink()
+					self.stdout.write(self.style.SUCCESS(f"Deleted DB: {db_path}"))
+				except PermissionError:
+					self.stdout.write(
+						self.style.WARNING(
+							f"Could not delete DB (file locked): {db_path}. Falling back to flush."
+						)
+					)
+					call_command("flush", interactive=False, verbosity=1)
+			else:
+				self.stdout.write(self.style.WARNING(f"DB file not found: {db_path}"))
+
+			self.stdout.write("Running migrations...")
+			call_command("migrate", interactive=False, verbosity=1)
+		else:
+			self.stdout.write(
+				self.style.WARNING(
+					"Non-SQLite database detected; running `flush` (no file backup)."
+				)
+			)
+			call_command("flush", interactive=False, verbosity=1)
+			call_command("migrate", interactive=False, verbosity=1)
+
+		if include_media:
+			media_root = Path(str(getattr(settings, "MEDIA_ROOT", "")) or "").expanduser().resolve()
+			base_dir = Path(settings.BASE_DIR).resolve()
+			if not str(media_root):
+				self.stdout.write(self.style.WARNING("MEDIA_ROOT is not set; skipping media cleanup."))
+			elif media_root == base_dir or media_root == media_root.anchor or len(media_root.parts) <= 2:
+				self.stdout.write(self.style.ERROR(f"Refusing to delete unsafe MEDIA_ROOT: {media_root}"))
+			else:
+				# Only allow deleting media within the project directory.
+				try:
+					media_root.relative_to(base_dir)
+				except Exception:
+					self.stdout.write(self.style.ERROR(f"Refusing to delete media outside project: {media_root}"))
+				else:
+					if media_root.exists():
+						for child in media_root.iterdir():
+							if child.is_dir():
+								shutil.rmtree(child, ignore_errors=True)
+							else:
+								try:
+									child.unlink()
+								except Exception:
+									pass
+						self.stdout.write(self.style.SUCCESS(f"Cleared MEDIA_ROOT: {media_root}"))
+					else:
+						self.stdout.write(self.style.WARNING(f"MEDIA_ROOT does not exist: {media_root}"))
+
+		self.stdout.write(self.style.SUCCESS("Data reset complete."))
+		self.stdout.write("Next: create an admin user with `manage.py createsuperuser`.")

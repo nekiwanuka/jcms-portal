@@ -14,18 +14,68 @@
     <div class="card-body">
       <form method="post" class="row g-3">
         {% csrf_token %}
-        {% for field in form %}
-          <div class="col-12 col-md-6">
-            <label class="form-label">{{ field.label }}</label>
-            {{ field }}
-            {% if field.help_text %}
-              <div class="form-text">{{ field.help_text }}</div>
-            {% endif %}
-            {% for error in field.errors %}
-              <div class="text-danger small">{{ error }}</div>
-            {% endfor %}
+        <div class="col-12 col-md-4">
+          <label class="form-label">Supplier</label>
+          {{ form.supplier }}
+          {% for error in form.supplier.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Product (optional)</label>
+          {{ form.product }}
+          {% for error in form.product.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">What they supply</label>
+          {{ form.item_name }}
+          <div class="form-text">Free-text description, e.g. "Photo printing A4"</div>
+          {% for error in form.item_name.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="col-6 col-md-2">
+          <label class="form-label">Unit</label>
+          {{ form.quantity_unit }}
+          <div class="form-text">e.g. kg, meter, box</div>
+          {% for error in form.quantity_unit.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="col-6 col-md-2">
+          <label class="form-label">Currency</label>
+          {{ form.currency }}
+          {% for error in form.currency.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label">Unit price</label>
+          {{ form.unit_price }}
+          {% for error in form.unit_price.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label">Minimum order</label>
+          {{ form.min_order_quantity }}
+          <div class="form-text">Minimum quantity for this unit price (optional)</div>
+          {% for error in form.min_order_quantity.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label">Lead time (days)</label>
+          {{ form.lead_time_days }}
+          {% for error in form.lead_time_days.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label">Quoted at</label>
+          {{ form.quoted_at }}
+          {% for error in form.quoted_at.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-6 col-md-2 d-flex align-items-center mt-4">
+          <div class="form-check">
+            {{ form.is_active }}
+            <label class="form-check-label">Active</label>
           </div>
-        {% endfor %}
+          {% for error in form.is_active.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
+        <div class="col-12">
+          <label class="form-label">Notes</label>
+          {{ form.notes }}
+          {% for error in form.notes.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+        </div>
 
         <div class="col-12 d-flex gap-2">
           <button type="submit" class="btn btn-primary">Save</button>

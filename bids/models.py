@@ -32,6 +32,7 @@ class Bid(models.Model):
 		IT = "it", "IT"
 		MEDICAL = "medical", "Medical"
 		PPE = "ppe", "PPE"
+		GENERAL_SUPPLIES = "general_supplies", "General Supplies"
 		OTHER = "other", "Other"
 
 	quotation = models.ForeignKey(

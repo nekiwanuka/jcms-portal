@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% load formatting %}
+
+{% block title %}Stock Movements | Inventory{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Stock Movements</h1>
+      <div class="text-muted">Audit log for stock in/out changes.</div>
+    </div>
+    <a href="{% url 'inventory' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-12 col-md-4">
+          <label class="form-label small text-muted mb-1">Search</label>
+          <input name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="SKU or product name" />
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label small text-muted mb-1">Type</label>
+          <select name="type" class="form-select form-select-sm">
+            <option value="">All</option>
+            <option value="in" {% if filters.type == 'in' %}selected{% endif %}>Stock In</option>
+            <option value="out" {% if filters.type == 'out' %}selected{% endif %}>Stock Out</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-2 d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+          <a href="{% url 'stock_movements' %}" class="btn btn-outline-secondary btn-sm w-100">Reset</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white d-flex align-items-center justify-content-between">
+      <div class="fw-semibold">Latest Movements</div>
+      <span class="text-muted small">Showing latest 200</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Date</th>
+              <th>Product</th>
+              <th>Type</th>
+              <th class="text-end">Qty</th>
+              <th>Reference</th>
+              <th class="d-none d-md-table-cell">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in movements %}
+              <tr>
+                <td>{{ m.occurred_at|date:'Y-m-d H:i' }}</td>
+                <td>
+                  <div class="fw-semibold">{{ m.product.sku }}</div>
+                  <div class="text-muted small">{{ m.product.name }}</div>
+                </td>
+                <td>
+                  {% if m.movement_type == 'in' %}
+                    <span class="badge text-bg-success">IN</span>
+                  {% else %}
+                    <span class="badge text-bg-danger">OUT</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">{{ m.quantity|money }}</td>
+                <td>{{ m.reference|default:'-' }}</td>
+                <td class="d-none d-md-table-cell">{{ m.notes|default:'-' }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" class="text-center text-muted py-4">No stock movements found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

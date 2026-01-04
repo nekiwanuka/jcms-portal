@@ -1,8 +1,13 @@
 from decimal import Decimal
+import logging
 
 from django.conf import settings
 from django.db import models, transaction
+from django.db.models import F
 from django.utils import timezone
+
+
+logger = logging.getLogger(__name__)
 
 
 class InvoiceSequence(models.Model):
@@ -43,6 +48,9 @@ class Invoice(models.Model):
 	signed_by_name = models.CharField(max_length=120, blank=True, default="")
 	signed_at = models.DateTimeField(null=True, blank=True)
 
+	# Inventory integration
+	stock_deducted_at = models.DateTimeField(null=True, blank=True)
+
 	created_at = models.DateTimeField(auto_now_add=True)
 	updated_at = models.DateTimeField(auto_now=True)
 
@@ -68,17 +76,35 @@ class Invoice(models.Model):
 	def subtotal(self) -> Decimal:
 		return sum((item.line_total() for item in self.items.all()), Decimal("0.00"))
 
+	def taxable_subtotal(self) -> Decimal:
+		return sum((item.line_total() for item in self.items.filter(vat_exempt=False)), Decimal("0.00"))
+
 	def vat_amount(self) -> Decimal:
-		return (self.subtotal() * self.vat_rate).quantize(Decimal("0.01"))
+		return (self.taxable_subtotal() * (self.vat_rate or Decimal("0.00"))).quantize(Decimal("0.01"))
 
 	def total(self) -> Decimal:
 		return (self.subtotal() + self.vat_amount()).quantize(Decimal("0.01"))
 
 	def amount_paid(self) -> Decimal:
-		return sum((p.amount for p in self.payments.all()), Decimal("0.00")).quantize(Decimal("0.01"))
+		paid = sum((p.amount for p in self.payments.all()), Decimal("0.00"))
+		refunded = sum((r.amount for r in self.refunds.all()), Decimal("0.00"))
+		return (paid - refunded).quantize(Decimal("0.01"))
+
+	def amount_refunded(self) -> Decimal:
+		return sum((r.amount for r in self.refunds.all()), Decimal("0.00")).quantize(Decimal("0.01"))
 
 	def outstanding_balance(self) -> Decimal:
-		return (self.total() - self.amount_paid()).quantize(Decimal("0.01"))
+		"""Return the remaining balance, tolerating tiny rounding differences.
+
+		In some cases VAT/line rounding can leave a very small residual even when
+		the user has effectively paid the "full" amount. Treat very small
+		differences (<= 0.05) as fully paid so the UI does not show a
+		confusing 0.01 balance.
+		"""
+		balance = (self.total() - self.amount_paid()).quantize(Decimal("0.01"))
+		if abs(balance) <= Decimal("0.05"):
+			return Decimal("0.00")
+		return balance
 
 	def refresh_status_from_payments(self, *, save: bool = True) -> None:
 		"""Keep invoice status consistent with payments.
@@ -97,8 +123,10 @@ class Invoice(models.Model):
 		new_status = self.status
 		if balance <= Decimal("0.00"):
 			new_status = self.Status.PAID
-		elif paid > Decimal("0.00") and self.status == self.Status.DRAFT:
+		elif paid > Decimal("0.00"):
 			new_status = self.Status.ISSUED
+		else:
+			new_status = self.Status.DRAFT
 
 		update_fields: list[str] = []
 		if new_status != self.status:
@@ -111,6 +139,73 @@ class Invoice(models.Model):
 
 		if save and update_fields:
 			self.save(update_fields=update_fields)
+		# If the invoice is now paid, attempt stock deduction.
+		try:
+			self.deduct_stock_if_needed()
+		except Exception:
+			logger.exception("Failed to deduct stock for invoice %s", self.pk)
+
+	@property
+	def is_approved(self) -> bool:
+		return bool(self.signed_at)
+
+	def deduct_stock_if_needed(self) -> bool:
+		"""Deduct inventory stock exactly once when invoice is paid.
+
+		Rules:
+		- Only when `status == PAID`.
+		- Deduct only for line-items linked to a Product.
+		- Idempotent via `stock_deducted_at`.
+		- Idempotent via `stock_deducted_at`.
+		"""
+		if not self.pk:
+			return False
+		if self.status != self.Status.PAID:
+			return False
+
+		from inventory.models import Product, StockMovement
+
+		with transaction.atomic():
+			invoice = Invoice.objects.select_for_update().get(pk=self.pk)
+			reference = invoice.number or f"Invoice {invoice.pk}"
+			# Repair path: previous versions could mark stock_deducted_at even when
+			# there were no eligible items (or before items were added). If we have
+			# no OUT movements recorded for this invoice, allow re-running deduction.
+			if invoice.stock_deducted_at and StockMovement.objects.filter(
+				reference=reference,
+				movement_type=StockMovement.MovementType.OUT,
+			).exists():
+				return False
+			if invoice.status != self.Status.PAID:
+				return False
+
+			items = list(invoice.items.select_related("product").all())
+			deducted_any = False
+			for item in items:
+				if not item.product_id:
+					continue
+				qty = (item.quantity or Decimal("0.00"))
+				if qty <= Decimal("0.00"):
+					continue
+				# Update stock and record a movement. Allow negative stock if oversold.
+				Product.objects.filter(pk=item.product_id).update(stock_quantity=F("stock_quantity") - qty)
+				StockMovement.objects.create(
+					product_id=item.product_id,
+					movement_type=StockMovement.MovementType.OUT,
+					quantity=qty,
+					reference=reference,
+					notes=f"Sold via invoice {invoice.number or invoice.pk}",
+					occurred_at=timezone.now(),
+				)
+				deducted_any = True
+
+			if not deducted_any:
+				return False
+
+			invoice.stock_deducted_at = timezone.now()
+			invoice.save(update_fields=["stock_deducted_at"])
+			self.stock_deducted_at = invoice.stock_deducted_at
+		return True
 
 
 class InvoiceItem(models.Model):
@@ -119,9 +214,19 @@ class InvoiceItem(models.Model):
 	description = models.CharField(max_length=255)
 	quantity = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("1.00"))
 	unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+	vat_exempt = models.BooleanField(default=False)
 
 	def __str__(self):
 		return self.description
+
+	def save(self, *args, **kwargs):
+		super().save(*args, **kwargs)
+		if self.invoice_id:
+			try:
+				# If an item is added/edited after payment, ensure stock is deducted.
+				self.invoice.deduct_stock_if_needed()
+			except Exception:
+				logger.exception("Failed to deduct stock after saving invoice item %s", self.pk)
 
 	def line_total(self) -> Decimal:
 		return (self.quantity * self.unit_price).quantize(Decimal("0.01"))
@@ -176,3 +281,73 @@ class Payment(models.Model):
 			except Exception:
 				# Avoid failing payment save if invoice status refresh hits a race.
 				pass
+
+	@property
+	def refund_deadline(self):
+		"""Latest datetime a refund may be created for this payment.
+
+		Policy: refunds are allowed within 21 days of the payment date.
+		"""
+		return self.paid_at + timezone.timedelta(days=21)
+
+	@property
+	def is_refund_window_open(self) -> bool:
+		return timezone.now() <= self.refund_deadline
+
+
+class PaymentRefund(models.Model):
+	"""Represents a refund against a recorded payment.
+
+	We keep refunds separate from `Payment` to preserve the meaning that payments
+	are positive receipts. Refunds reduce net revenue and increase invoice balance.
+	"""
+
+	payment = models.ForeignKey(Payment, on_delete=models.CASCADE, related_name="refunds")
+	invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="refunds")
+	amount = models.DecimalField(max_digits=12, decimal_places=2)
+	refunded_at = models.DateTimeField(default=timezone.now)
+	refunded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+	reference = models.CharField(max_length=120, blank=True, default="")
+	notes = models.TextField(blank=True, default="")
+
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	class Meta:
+		ordering = ["-refunded_at", "-id"]
+		indexes = [
+			models.Index(fields=["invoice", "-refunded_at"], name="invoices_pa_invoice_61cc52_idx"),
+			models.Index(fields=["payment", "-refunded_at"], name="invoices_pa_payment_d1987f_idx"),
+		]
+
+	def __str__(self):
+		inv = getattr(self.invoice, "number", None) or f"Invoice {self.invoice_id}"
+		return f"Refund {self.amount} for {inv}"
+
+	def clean(self):
+		from django.core.exceptions import ValidationError
+		if self.amount is None or self.amount <= Decimal("0.00"):
+			raise ValidationError({"amount": "Refund amount must be greater than 0."})
+
+		# Policy: refunds can only be created within 21 days of the payment date.
+		# Enforce against current time to prevent backdating.
+		if self.payment_id and getattr(self.payment, "paid_at", None):
+			deadline = self.payment.paid_at + timezone.timedelta(days=21)
+			if timezone.now() > deadline:
+				deadline_local = timezone.localtime(deadline)
+				raise ValidationError(
+					f"Refund window expired. Refunds are allowed within 21 days of payment date (deadline: {deadline_local:%Y-%m-%d %H:%M})."
+				)
+
+		# Ensure refund is consistent with linked objects.
+		if self.payment_id and self.invoice_id and self.payment.invoice_id != self.invoice_id:
+			raise ValidationError("Refund invoice must match payment invoice.")
+
+	def save(self, *args, **kwargs):
+		# Keep invoice in sync even when refunds are edited/deleted.
+		self.full_clean()
+		super().save(*args, **kwargs)
+		if self.invoice_id:
+			try:
+				self.invoice.refresh_status_from_payments(save=True)
+			except Exception:
+				logger.exception("Failed to refresh invoice status after refund %s", self.pk)

@@ -85,6 +85,18 @@ class Document(models.Model):
 		return self.get_doc_type_display()
 
 	def save(self, *args, **kwargs):
+		# Ensure every document has a human-friendly title.
+		# - Upload form enforces this, but keep a model-level fallback for
+		#   programmatic creations and legacy paths.
+		if not (self.title or "").strip():
+			base = ""
+			try:
+				name = getattr(self.file, "name", "") or ""
+				base = os.path.splitext(os.path.basename(name))[0].strip()
+			except Exception:
+				base = ""
+			self.title = base or f"{self.doc_type_label}"
+
 		if not self.pk:
 			# Basic versioning by (client, doc_type, title, related objects)
 			base_qs = Document.objects.filter(

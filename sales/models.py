@@ -17,6 +17,7 @@ class Quotation(models.Model):
 		IT = "it", "IT"
 		MEDICAL = "medical", "Medical"
 		PPE = "ppe", "PPE"
+		GENERAL_SUPPLIES = "general_supplies", "General Supplies"
 		OTHER = "other", "Other"
 
 	class Status(models.TextChoices):
@@ -105,14 +106,21 @@ class Quotation(models.Model):
 	def recalculate_amounts(self, *, save: bool = True) -> None:
 		"""Recalculate and store subtotal/vat/total based on items and toggles."""
 		subtotal = sum((item.line_total() for item in self.items.all()), Decimal("0.00"))
+		taxable_subtotal = sum((item.line_total() for item in self.items.filter(vat_exempt=False)), Decimal("0.00"))
 		discount = (self.discount_amount or Decimal("0.00")).quantize(Decimal("0.01"))
 		if discount < Decimal("0.00"):
 			discount = Decimal("0.00")
-		taxable = (subtotal - discount)
-		if taxable < Decimal("0.00"):
-			taxable = Decimal("0.00")
-		vat = (taxable * (self.vat_rate or Decimal("0.00"))).quantize(Decimal("0.01")) if self.vat_enabled else Decimal("0.00")
-		total = (taxable + vat).quantize(Decimal("0.01"))
+		pre_tax_total = (subtotal - discount)
+		if pre_tax_total < Decimal("0.00"):
+			pre_tax_total = Decimal("0.00")
+
+		taxable_base = (taxable_subtotal - discount)
+		if taxable_base < Decimal("0.00"):
+			taxable_base = Decimal("0.00")
+
+		vat_rate = (self.vat_rate or Decimal("0.00"))
+		vat = (taxable_base * vat_rate).quantize(Decimal("0.01")) if (self.vat_enabled and vat_rate) else Decimal("0.00")
+		total = (pre_tax_total + vat).quantize(Decimal("0.01"))
 
 		self.subtotal_amount = subtotal.quantize(Decimal("0.01"))
 		self.vat_amount_amount = vat
@@ -155,6 +163,7 @@ class QuotationItem(models.Model):
 	description = models.CharField(max_length=255, blank=True, default="")
 	quantity = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("1.00"))
 	unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+	vat_exempt = models.BooleanField(default=False)
 	total_price = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
 
 	def __str__(self):

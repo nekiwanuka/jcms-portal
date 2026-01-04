@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% load formatting %}
+
+{% block title %}Client History | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Client History</h1>
+      <div class="text-muted">{{ client }}</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'clients' %}">Back</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'documents_archive' %}?client={{ client.id }}">Documents</a>
+      <a class="btn btn-primary btn-sm" href="{% url 'upload_document' %}?client={{ client.id }}"><i class="bi bi-upload"></i> Upload Document</a>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Quotations</div>
+          <div class="h5 mb-0">{{ counts.quotations }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Invoices</div>
+          <div class="h5 mb-0">{{ counts.invoices }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Payments</div>
+          <div class="h5 mb-0">{{ counts.payments }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Documents</div>
+          <div class="h5 mb-0">{{ counts.documents }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header bg-white">
+      <div class="fw-semibold">Quotations</div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Number</th>
+              <th>Status</th>
+              <th class="text-end">Total</th>
+              <th class="text-end">Created</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for q in quotations %}
+              <tr>
+                <td class="fw-semibold">{{ q.number }}</td>
+                <td><span class="badge {{ q.badge_class }}">{{ q.get_status_display }}</span></td>
+                <td class="text-end">{{ q.currency }} {{ q.total_amount|money }}</td>
+                <td class="text-end">{{ q.created_at|date:'Y-m-d' }}</td>
+                <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{% url 'quotation_detail' q.id %}">View</a></td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3">No quotations for this client.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header bg-white">
+      <div class="fw-semibold">Invoices</div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Number</th>
+              <th>Status</th>
+              <th class="text-end">Total</th>
+              <th class="text-end">Created</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in invoices %}
+              <tr>
+                <td class="fw-semibold">{{ inv.number }}</td>
+                <td class="text-capitalize">{{ inv.status }}</td>
+                <td class="text-end">{{ inv.currency }} {{ inv.total|money }}</td>
+                <td class="text-end">{{ inv.created_at|date:'Y-m-d' }}</td>
+                <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{% url 'invoice_detail' inv.id %}">View</a></td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3">No invoices for this client.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header bg-white">
+      <div class="fw-semibold">Payments / Receipts</div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Receipt</th>
+              <th>Invoice</th>
+              <th class="text-end">Amount</th>
+              <th class="text-end">Paid At</th>
+              <th class="text-end">Receipt PDF</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in payments %}
+              <tr>
+                <td class="fw-semibold">{{ p.receipt_number|default:p.id }}</td>
+                <td><a href="{% url 'invoice_detail' p.invoice.id %}">{{ p.invoice.number }}</a></td>
+                <td class="text-end">{{ p.invoice.currency }} {{ p.amount|money }}</td>
+                <td class="text-end">{{ p.paid_at|date:'Y-m-d H:i' }}</td>
+                <td class="text-end">
+                  {% if p.archived_receipt_doc %}
+                    <a class="btn btn-outline-secondary btn-sm" href="{% url 'download_document' p.archived_receipt_doc.id %}"><i class="bi bi-download"></i></a>
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3">No payments for this client.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="fw-semibold">Documents</div>
+        <a class="btn btn-outline-secondary btn-sm" href="{% url 'documents_archive' %}?client={{ client.id }}">Open Archive</a>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Title</th>
+              <th>Type</th>
+              <th>v</th>
+              <th class="text-end">Uploaded</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in documents %}
+              <tr>
+                <td class="fw-semibold">{{ d.title|default:'(Untitled)' }}</td>
+                <td>{{ d.doc_type_label }}</td>
+                <td>v{{ d.version }}</td>
+                <td class="text-end">{{ d.uploaded_at|date:'Y-m-d H:i' }}</td>
+                <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a>
+                  <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'download_document' d.id %}?inline=1" data-title="Preview"><i class="bi bi-eye"></i></a>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3">No documents for this client.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

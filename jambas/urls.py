@@ -21,6 +21,10 @@ from django.urls import include, path
 from django.views.generic.base import RedirectView
 from django.templatetags.static import static as static_url
 
+admin.site.site_header = "Backend Engine"
+admin.site.site_title = "Backend Engine"
+admin.site.index_title = "Backend Engine"
+
 urlpatterns = [
     path("favicon.ico", RedirectView.as_view(url=static_url("images/favicon.png"), permanent=False)),
     path('admin/', admin.site.urls),

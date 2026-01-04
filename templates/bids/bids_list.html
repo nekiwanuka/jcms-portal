@@ -104,7 +104,7 @@
                 <td class="d-none d-md-table-cell">{{ b.client }}</td>
                 <td><span class="badge {{ b.badge_class }}">{{ b.get_status_display }}</span></td>
                 <td class="d-none d-md-table-cell">{{ b.closing_date|date:"Y-m-d" }}</td>
-                <td class="text-end">{{ b.amount }}</td>
+                <td class="text-end">{{ b.amount|money }}</td>
                 <td class="text-end">
                   <a class="btn btn-outline-primary btn-sm" href="{% url 'view_bid' b.id %}">View</a>
                   {% if not b.is_locked %}

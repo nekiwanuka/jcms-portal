@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Invoice, InvoiceItem, Payment
+from .models import Invoice, InvoiceItem, Payment, PaymentRefund
 
 
 class InvoiceItemInline(admin.TabularInline):
@@ -21,3 +21,10 @@ class PaymentAdmin(admin.ModelAdmin):
 	list_display = ("invoice", "method_label", "amount", "reference", "paid_at")
 	list_filter = ("method",)
 	search_fields = ("invoice__number", "reference")
+
+
+@admin.register(PaymentRefund)
+class PaymentRefundAdmin(admin.ModelAdmin):
+	list_display = ("invoice", "payment", "amount", "refunded_at", "refunded_by")
+	list_filter = ("refunded_at",)
+	search_fields = ("invoice__number", "payment__receipt_number", "reference")

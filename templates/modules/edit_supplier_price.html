@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Supplier Price | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Edit Supply &amp; Rate</h1>
+      <div class="text-muted">Update what {{ supplier.name }} supplies and the agreed terms.</div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+        <div class="col-12 col-md-4">
+          <label class="form-label">Supplier</label>
+          {{ form.supplier }}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Product (optional)</label>
+          {{ form.product }}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">What they supply</label>
+          {{ form.item_name }}
+        </div>
+
+        <div class="col-6 col-md-2">
+          <label class="form-label">Unit</label>
+          {{ form.quantity_unit }}
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Currency</label>
+          {{ form.currency }}
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label">Unit price</label>
+          {{ form.unit_price }}
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Minimum order</label>
+          {{ form.min_order_quantity }}
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label">Lead time (days)</label>
+          {{ form.lead_time_days }}
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label">Quoted at</label>
+          {{ form.quoted_at }}
+        </div>
+        <div class="col-6 col-md-2 d-flex align-items-center mt-4">
+          <div class="form-check">
+            {{ form.is_active }}
+            <label class="form-check-label">Active</label>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">Notes</label>
+          {{ form.notes }}
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Save changes</button>
+          <a href="{% url 'supplier_detail' supplier.id %}" class="btn btn-secondary">Cancel</a>
+          <button
+            type="submit"
+            formaction="{% url 'delete_supplier_price' price.id %}"
+            formmethod="post"
+            class="btn btn-outline-danger ms-auto"
+            onclick="return confirm('Delete this supply/price?');"
+          >
+            Delete
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

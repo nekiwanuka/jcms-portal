@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load formatting %}
 
 {% block title %}Inventory | Jambas Imaging{% endblock %}
 
@@ -11,6 +12,8 @@
     <div class="d-flex gap-2">
         <a href="{% url 'export_inventory_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
         <a href="{% url 'export_inventory_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
+        <a href="{% url 'export_inventory_pdf' %}{{ qs }}{% if qs %}&{% else %}?{% endif %}inline=1" class="btn btn-outline-secondary btn-sm js-doc-preview" data-title="Inventory PDF">Preview PDF</a>
+      <a href="{% url 'stock_movements' %}" class="btn btn-outline-primary btn-sm">Stock Movements</a>
       <a href="{% url 'suppliers' %}" class="btn btn-outline-primary btn-sm">Suppliers</a>
       <a href="{% url 'add_inventory' %}" class="btn btn-primary btn-sm">+ Add Product</a>
     </div>
@@ -107,9 +110,9 @@
               <th class="d-none d-md-table-cell">Category</th>
               <th class="d-none d-lg-table-cell">Supplier</th>
               <th class="text-end">Stock</th>
-              <th class="text-end d-none d-md-table-cell">Low Stock At</th>
+              <th class="text-end d-none d-md-table-cell">Reorder Level</th>
               <th>Status</th>
-              <th class="text-end">Prices</th>
+              <th class="text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -118,12 +121,12 @@
                 <td class="fw-semibold">{{ p.sku }}</td>
                 <td>
                   <div class="fw-semibold">{{ p.name }}</div>
-                  <div class="text-muted small">{{ p.unit_price|floatformat:2 }} {{ p.unit }}</div>
+                  <div class="text-muted small">{{ p.unit_price|money }} {{ p.unit }}</div>
                 </td>
                 <td class="d-none d-md-table-cell">{{ p.category }}</td>
                 <td class="d-none d-lg-table-cell">{{ p.supplier|default:"-" }}</td>
-                <td class="text-end">{{ p.stock_quantity|floatformat:2 }}</td>
-                <td class="text-end d-none d-md-table-cell">{{ p.low_stock_threshold|floatformat:2 }}</td>
+                <td class="text-end">{{ p.stock_quantity|money }}</td>
+                <td class="text-end d-none d-md-table-cell">{{ p.low_stock_threshold|money }}</td>
                 <td>
                   {% if p.is_low_stock %}
                     <span class="badge text-bg-danger">Low</span>
@@ -132,7 +135,18 @@
                   {% endif %}
                 </td>
                 <td class="text-end">
-                  <a class="btn btn-outline-primary btn-sm" href="{% url 'product_price_compare' p.id %}">Compare</a>
+          <div class="d-inline-flex gap-1">
+          <a class="btn btn-outline-success btn-sm" href="{% url 'adjust_stock' p.id %}?type=in">Stock In</a>
+          <a class="btn btn-outline-danger btn-sm" href="{% url 'adjust_stock' p.id %}?type=out">Stock Out</a>
+          <a class="btn btn-outline-primary btn-sm" href="{% url 'product_price_compare' p.id %}">Suppliers</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'edit_inventory' p.id %}">Edit</a>
+          {% if is_admin %}
+            <form method="post" action="{% url 'delete_inventory' p.id %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete this product? If it is referenced by invoices, it will be deactivated instead.');">Delete</button>
+            </form>
+          {% endif %}
+          </div>
                 </td>
               </tr>
             {% empty %}

@@ -1,0 +1,62 @@
+/* Jambas Admin theme override (minimal, safe).
+   Uses the project primary blue (#0d6efd) and shows brand logo.
+*/
+
+:root {
+  --jambas-blue: #0d6efd;
+}
+
+/* Header bar */
+#header {
+  background: var(--jambas-blue) !important;
+}
+
+#header a:link,
+#header a:visited {
+  color: #fff !important;
+}
+
+/* Brand block */
+.jambas-admin-brand {
+  margin: 0;
+}
+
+.jambas-admin-brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  text-decoration: none;
+}
+
+.jambas-admin-logo img {
+  height: 34px;
+  width: auto;
+  max-width: 180px;
+  object-fit: contain;
+  display: block;
+}
+
+.jambas-admin-title {
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: #fff;
+}
+
+/* Primary action buttons */
+.button, input[type=submit], input[type=button], .submit-row input, a.button {
+  background: var(--jambas-blue) !important;
+  border-color: var(--jambas-blue) !important;
+}
+
+.button:hover, input[type=submit]:hover, input[type=button]:hover, .submit-row input:hover, a.button:hover {
+  filter: brightness(0.95);
+}
+
+/* Links */
+a:link, a:visited {
+  color: #0b5ed7;
+}
+
+a:hover {
+  color: #0a58ca;
+}

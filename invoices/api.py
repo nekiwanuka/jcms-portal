@@ -1,4 +1,5 @@
 from rest_framework import viewsets
+from rest_framework.exceptions import PermissionDenied
 
 from accounts.models import User
 from accounts.permissions import RolePermission
@@ -50,3 +51,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 allow_write={User.Role.ADMIN, User.Role.MANAGER, User.Role.ACCOUNTANT},
             )
         ]
+
+    def destroy(self, request, *args, **kwargs):
+        user = request.user
+        role = getattr(user, "role", None)
+        if not (getattr(user, "is_superuser", False) or role == User.Role.ADMIN):
+            raise PermissionDenied("Only admins can delete payments.")
+        return super().destroy(request, *args, **kwargs)

@@ -210,6 +210,7 @@
                   <td class="text-end">
                     <a class="btn btn-outline-secondary btn-sm" href="{% url 'invoice_detail' inv.id %}">Open</a>
                     <a class="btn btn-outline-primary btn-sm" href="{% url 'invoice_pdf' inv.id %}"><i class="bi bi-filetype-pdf"></i></a>
+                    <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'invoice_pdf' inv.id %}?inline=1" data-title="Invoice PDF"><i class="bi bi-eye"></i></a>
                     <form method="post" action="{% url 'send_invoice' inv.id %}" class="d-inline">
                       {% csrf_token %}
                       <button class="btn btn-outline-success btn-sm" type="submit"><i class="bi bi-envelope"></i></button>
@@ -250,6 +251,7 @@
                   <td class="text-end">
                     <a class="btn btn-outline-secondary btn-sm" href="{% url 'quotation_detail' q.id %}">Open</a>
                     <a class="btn btn-outline-primary btn-sm" href="{% url 'quotation_pdf' q.id %}"><i class="bi bi-filetype-pdf"></i></a>
+                    <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'quotation_pdf' q.id %}?inline=1" data-title="Quotation PDF"><i class="bi bi-eye"></i></a>
                     <form method="post" action="{% url 'send_quotation' q.id %}" class="d-inline">
                       {% csrf_token %}
                       <button class="btn btn-outline-success btn-sm" type="submit"><i class="bi bi-envelope"></i></button>
@@ -289,6 +291,7 @@
                   <td>{{ d.client }}</td>
                   <td class="text-end">
                     <a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a>
+                    <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'download_document' d.id %}?inline=1" data-title="Preview"><i class="bi bi-eye"></i></a>
                     <form method="post" action="{% url 'send_document' d.id %}" class="d-inline">
                       {% csrf_token %}
                       <button class="btn btn-outline-success btn-sm" type="submit"><i class="bi bi-envelope"></i></button>
@@ -327,9 +330,10 @@
                   <td>{{ p.paid_at|date:"Y-m-d H:i" }}</td>
                   <td class="fw-semibold">{{ p.invoice.number }}</td>
                   <td>{{ p.invoice.client }}</td>
-                  <td class="text-end">{{ p.invoice.currency }} {{ p.amount }}</td>
+                  <td class="text-end">{{ p.invoice.currency }} {{ p.amount|money }}</td>
                   <td class="text-end">
                     <a class="btn btn-outline-primary btn-sm" href="{% url 'payment_receipt_pdf' p.invoice.id p.id %}"><i class="bi bi-filetype-pdf"></i></a>
+                    <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'payment_receipt_pdf' p.invoice.id p.id %}?inline=1" data-title="Receipt PDF"><i class="bi bi-eye"></i></a>
                     <form method="post" action="{% url 'send_payment_receipt' p.invoice.id p.id %}" class="d-inline">
                       {% csrf_token %}
                       <button class="btn btn-outline-success btn-sm" type="submit"><i class="bi bi-envelope"></i></button>

@@ -102,9 +102,11 @@ class OneTimePassword(models.Model):
 	def verify(self, code: str) -> bool:
 		if self.is_expired or self.is_verified:
 			return False
+		if check_password(code, self.code_hash):
+			return True
 		self.verify_attempts += 1
 		self.save(update_fields=["verify_attempts"])
-		return check_password(code, self.code_hash)
+		return False
 
 
 class LoginAuditLog(models.Model):

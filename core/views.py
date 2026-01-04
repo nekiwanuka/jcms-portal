@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.db.models import F
@@ -14,8 +15,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4, A5
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
@@ -212,22 +213,114 @@ def _filter_expenses(request, qs):
 	return qs
 
 
-def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename: str) -> HttpResponse:
+def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename: str, *, inline: bool = False) -> HttpResponse:
 	"""Generate a simple, reliable PDF table export.
 
 	Uses ReportLab (already in requirements) for cPanel-friendly PDF creation.
 	"""
 	buffer = BytesIO()
-	doc = SimpleDocTemplate(buffer, pagesize=A4, title=title)
+	doc = SimpleDocTemplate(
+		buffer,
+		pagesize=A4,
+		title=title,
+		topMargin=90,
+		bottomMargin=72,
+		leftMargin=36,
+		rightMargin=36,
+	)
 	styles = getSampleStyleSheet()
+	styles.add(
+		ParagraphStyle(
+			"pdf_export_hint",
+			parent=styles["Normal"],
+			fontSize=9,
+			leading=11,
+			textColor=colors.HexColor("#475569"),
+		)
+	)
 
 	elements = [
 		Paragraph(title, styles["Title"]),
-		Spacer(1, 12),
+		Spacer(1, 6),
+		Paragraph("Generated export", styles["pdf_export_hint"]),
+		Spacer(1, 10),
 	]
 
+	def _cell_text(value) -> str:
+		if value is None:
+			return ""
+		return str(value)
+
+	def _looks_numeric(text: str) -> bool:
+		# Accept comma-grouped numbers and decimals.
+		# Examples: 1,000  1000  1,000.50  -2500.00
+		t = (text or "").strip()
+		if not t:
+			return False
+		t = t.replace(",", "")
+		# Strip a leading currency label if present (e.g. "UGX 1,000").
+		parts = t.split()
+		if len(parts) == 2 and all(ch.isalpha() for ch in parts[0]):
+			t = parts[1]
+		try:
+			float(t)
+			return True
+		except Exception:
+			return False
+
+	# Auto-size columns based on content (first N rows for performance).
+	sample_rows = rows[:200] if rows else []
+	col_count = len(header)
+	max_lens = [len(_cell_text(h)) for h in header]
+	for r in sample_rows:
+		for idx in range(min(col_count, len(r))):
+			max_lens[idx] = max(max_lens[idx], len(_cell_text(r[idx])))
+
+	# Weight wide text columns a bit more (description/name/client/title).
+	wide_headers = {"description", "details", "name", "client", "title"}
+	weights: list[float] = []
+	for idx, h in enumerate(header):
+		base = min(max_lens[idx], 42)
+		if (h or "").strip().lower() in wide_headers:
+			base *= 1.4
+		weights.append(max(8.0, float(base)))
+	wsum = sum(weights) or 1.0
+	col_widths = [(w / wsum) * float(doc.width) for w in weights]
+
+	# Right-align numeric columns.
+	numeric_headers = {
+		"amount",
+		"total",
+		"unit price",
+		"price",
+		"value",
+		"vat",
+		"profit",
+		"revenue",
+		"balance",
+		"stock",
+		"reorder level",
+	}
+	numeric_cols: set[int] = set()
+	for idx, h in enumerate(header):
+		hn = (h or "").strip().lower()
+		if hn in numeric_headers:
+			numeric_cols.add(idx)
+			continue
+		# Heuristic: if most of the sampled values look numeric, align right.
+		num_like = 0
+		seen = 0
+		for r in sample_rows:
+			if idx >= len(r):
+				continue
+			seen += 1
+			if _looks_numeric(_cell_text(r[idx])):
+				num_like += 1
+		if seen >= 5 and (num_like / max(seen, 1)) >= 0.8:
+			numeric_cols.add(idx)
+
 	data = [header] + rows
-	table = Table(data, repeatRows=1)
+	table = Table(data, repeatRows=1, colWidths=col_widths)
 	table.setStyle(
 		TableStyle(
 			[
@@ -235,21 +328,33 @@ def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename
 				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
 				("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
 				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("ALIGN", (0, 0), (-1, 0), "LEFT"),
+				("LEFTPADDING", (0, 0), (-1, -1), 6),
+				("RIGHTPADDING", (0, 0), (-1, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 4),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
 				("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
 				("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
 				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 			]
 		)
 	)
+	for idx in sorted(numeric_cols):
+		table.setStyle(TableStyle([("ALIGN", (idx, 1), (idx, -1), "RIGHT")]))
 
 	elements.append(table)
-	doc.build(elements)
+	doc.build(
+		elements,
+		onFirstPage=lambda c, d: _pdf_draw_header_footer(c, d, title=title),
+		onLaterPages=lambda c, d: _pdf_draw_header_footer(c, d, title=title),
+	)
 
 	pdf_bytes = buffer.getvalue()
 	buffer.close()
 
 	response = HttpResponse(pdf_bytes, content_type="application/pdf")
-	response["Content-Disposition"] = f'attachment; filename="{filename}"'
+	disposition = "inline" if inline else "attachment"
+	response["Content-Disposition"] = f'{disposition}; filename="{filename}"'
 	return response
 
 
@@ -366,6 +471,7 @@ def export_clients_csv(request):
 
 
 @login_required
+@xframe_options_sameorigin
 def export_clients_pdf(request):
 	"""Download clients as PDF (table)."""
 	from clients.models import Client
@@ -384,12 +490,57 @@ def export_clients_pdf(request):
 			(c.email or "-")[:28],
 		])
 
+	extra_inline = _get_str(request, "inline")
 	return _pdf_response(
 		title="Clients",
 		header=["ID", "Type", "Name", "Status", "Phone", "Email"],
 		rows=rows,
 		filename="clients.pdf",
+		inline=extra_inline in {"1", "true", "yes", "on"},
 	)
+
+
+@login_required
+def client_history(request, client_id: int):
+	"""Client history page: show all related business flow records."""
+	from clients.models import Client
+	from documents.models import Document
+	from invoices.models import Invoice, Payment
+	from sales.models import Quotation
+
+	client = get_object_or_404(Client, pk=client_id)
+
+	quotations = Quotation.objects.filter(client=client).order_by("-created_at")[:50]
+	invoices = Invoice.objects.filter(client=client).order_by("-created_at")[:50]
+	invoice_ids = list(invoices.values_list("id", flat=True))
+	payments = (
+		Payment.objects.select_related("invoice")
+		.filter(invoice_id__in=invoice_ids)
+		.order_by("-paid_at", "-id")[:100]
+	)
+
+	payment_ids = [p.id for p in payments]
+	receipt_docs = Document.objects.filter(related_payment_id__in=payment_ids).order_by("-uploaded_at", "-version")
+	receipt_doc_by_payment_id = {d.related_payment_id: d for d in receipt_docs if d.related_payment_id}
+	for p in payments:
+		p.archived_receipt_doc = receipt_doc_by_payment_id.get(p.id)
+
+	documents = Document.objects.filter(client=client).order_by("-uploaded_at", "-version")[:100]
+
+	context = {
+		"client": client,
+		"quotations": quotations,
+		"invoices": invoices,
+		"payments": payments,
+		"documents": documents,
+		"counts": {
+			"quotations": Quotation.objects.filter(client=client).count(),
+			"invoices": Invoice.objects.filter(client=client).count(),
+			"payments": Payment.objects.filter(invoice__client=client).count(),
+			"documents": Document.objects.filter(client=client).count(),
+		},
+	}
+	return render(request, "modules/client_history.html", context)
 
 
 @login_required
@@ -427,15 +578,24 @@ def receipts_view(request):
 
 	Receipts are per-payment, so this page is effectively a payments/receipts register.
 	"""
-	from invoices.models import Payment
+	from invoices.models import Payment, PaymentRefund
 	from documents.models import Document
 
-	payments = (
+	payments = list(
 		Payment.objects.select_related("invoice", "invoice__client")
+		.prefetch_related("refunds")
 		.order_by("-paid_at", "-id")
 		.all()[:200]
 	)
 	payment_ids = [p.id for p in payments]
+	refunds_qs = PaymentRefund.objects.filter(payment_id__in=payment_ids).only("payment_id", "amount")
+	refunds_by_payment_id = {}
+	for r in refunds_qs:
+		refunds_by_payment_id.setdefault(r.payment_id, []).append(r)
+	for p in payments:
+		refund_total = sum((r.amount for r in refunds_by_payment_id.get(p.id, [])), Decimal("0.00"))
+		p.refunded_total = refund_total
+		p.net_amount = (p.amount or Decimal("0.00")) - refund_total
 	docs = Document.objects.filter(related_payment_id__in=payment_ids).order_by("-uploaded_at", "-version")
 	archived_by_payment_id = {d.related_payment_id: d for d in docs if d.related_payment_id}
 	for p in payments:
@@ -466,31 +626,50 @@ def add_invoice(request):
 			if invoice.quotation_id:
 				from invoices.models import InvoiceItem
 				from sales.models import Quotation
+				from bids.models import Bid
 				quote = invoice.quotation
-				if quote and quote.status == Quotation.Status.ACCEPTED:
-					if not invoice.items.exists():
-						for it in quote.items.all():
-							InvoiceItem.objects.create(
-								invoice=invoice,
-								product=it.product,
-								description=(it.item_name or it.description or "Item"),
-								quantity=it.quantity,
-								unit_price=it.unit_price,
+				if quote:
+					# Enforce: if quotation is linked to bids, only WON bids can be invoiced.
+					bids_qs = quote.bids.all()
+					bids_exist = bids_qs.exists()
+					can_convert = False
+					if bids_exist:
+						if bids_qs.filter(status=Bid.Status.WON).exists():
+							can_convert = True
+						else:
+							messages.warning(
+								request,
+								"Quotation is linked to tenders; only WON bids can be converted to invoices.",
 							)
-						if (quote.discount_amount or Decimal("0.00")) > Decimal("0.00"):
-							InvoiceItem.objects.create(
-								invoice=invoice,
-								description="Discount",
-								quantity=Decimal("1.00"),
-								unit_price=(Decimal("0.00") - quote.discount_amount).quantize(Decimal("0.01")),
-							)
-						invoice.currency = quote.currency
-						invoice.vat_rate = quote.vat_rate if quote.vat_enabled else Decimal("0.00")
-						invoice.save(update_fields=["currency", "vat_rate"])
-					quote.status = Quotation.Status.CONVERTED
-					quote.save(update_fields=["status"])
-				else:
-					messages.warning(request, "Selected quotation must be Approved before conversion.")
+					elif quote.status == Quotation.Status.ACCEPTED:
+						# Walk-in / non-tender quotations use the existing APPROVED rule.
+						can_convert = True
+
+					if can_convert:
+						if not invoice.items.exists():
+							for it in quote.items.all():
+								InvoiceItem.objects.create(
+									invoice=invoice,
+									product=it.product,
+									description=(it.item_name or it.description or "Item"),
+									quantity=it.quantity,
+									unit_price=it.unit_price,
+								)
+							if (quote.discount_amount or Decimal("0.00")) > Decimal("0.00"):
+								InvoiceItem.objects.create(
+									invoice=invoice,
+									description="Discount",
+									quantity=Decimal("1.00"),
+									unit_price=(Decimal("0.00") - quote.discount_amount).quantize(Decimal("0.01")),
+								)
+							invoice.currency = quote.currency
+							invoice.vat_rate = quote.vat_rate if quote.vat_enabled else Decimal("0.00")
+							invoice.save(update_fields=["currency", "vat_rate"])
+						quote.status = Quotation.Status.CONVERTED
+						quote.save(update_fields=["status"])
+					elif not bids_exist:
+						# Preserve existing message for non-tender quotations.
+						messages.warning(request, "Selected quotation must be Approved before conversion.")
 
 			return redirect("invoices")
 	else:
@@ -697,6 +876,7 @@ def set_quotation_status(request, quotation_id: int, status: str):
 	from sales.models import Quotation
 	from core.audit import log_event
 	from core.models import AuditEvent
+	from invoices.models import Invoice
 
 	quote = get_object_or_404(Quotation, pk=quotation_id)
 	allowed = {Quotation.Status.SENT, Quotation.Status.ACCEPTED, Quotation.Status.REJECTED}
@@ -723,6 +903,28 @@ def set_quotation_status(request, quotation_id: int, status: str):
 		summary=f"{quote.number}: {old_status} -> {status}",
 		meta={"from": old_status, "to": status},
 	)
+
+	# If approving, immediately convert to an invoice (quotation copy still remains).
+	if status == Quotation.Status.ACCEPTED:
+		existing_invoice_id = Invoice.objects.filter(quotation=quote).values_list("id", flat=True).first()
+		if existing_invoice_id:
+			return redirect("invoice_detail", invoice_id=existing_invoice_id)
+		try:
+			invoice = _convert_quotation_to_invoice_internal(quote=quote, actor=request.user)
+			log_event(
+				action=AuditEvent.Action.QUOTATION_STATUS_CHANGED,
+				actor=request.user,
+				entity=quote,
+				client=quote.client,
+				summary=f"{quote.number}: {Quotation.Status.ACCEPTED} -> {Quotation.Status.CONVERTED}",
+				meta={"from": Quotation.Status.ACCEPTED, "to": Quotation.Status.CONVERTED},
+			)
+			messages.success(request, "Quotation approved and converted to invoice.")
+			return redirect("invoice_detail", invoice_id=invoice.id)
+		except Exception:
+			messages.warning(request, "Quotation approved. Conversion failed; use Convert button.")
+			return redirect("quotation_detail", quotation_id=quote.id)
+
 	messages.success(request, "Quotation status updated.")
 	return redirect("quotation_detail", quotation_id=quote.id)
 
@@ -738,8 +940,26 @@ def _build_quotation_pdf_bytes(quote, *, proforma: bool = False) -> bytes:
 		title=title,
 		topMargin=90,
 		bottomMargin=72,
+		leftMargin=36,
+		rightMargin=36,
 	)
 	styles = getSampleStyleSheet()
+	styles.add(
+		ParagraphStyle(
+			"pdf_section",
+			parent=styles["Heading3"],
+			textColor=colors.HexColor("#0f172a"),
+			spaceBefore=8,
+			spaceAfter=4,
+		)
+	)
+	item_style = ParagraphStyle(
+		"pdf_item",
+		parent=styles["Normal"],
+		fontSize=9.5,
+		leading=11,
+		textColor=colors.HexColor("#0f172a"),
+	)
 
 	client_name = str(quote.client)
 	client_email = getattr(quote.client, "email", "") or "-"
@@ -748,29 +968,39 @@ def _build_quotation_pdf_bytes(quote, *, proforma: bool = False) -> bytes:
 
 	elements = [
 		Paragraph(title, styles["Title"]),
-		Spacer(1, 6),
-		Paragraph(f"Client: {client_name}", styles["Normal"]),
-		Paragraph(f"Email: {client_email}", styles["Normal"]),
-		Paragraph(f"Category: {quote.category_label}", styles["Normal"]),
-		Paragraph(f"Valid until: {valid_until}", styles["Normal"]),
-		Paragraph(f"Prepared by: {prepared_by}", styles["Normal"]),
-		Spacer(1, 10),
+		Spacer(1, 8),
+		_pdf_kv_table(
+			styles=styles,
+			left_rows=[
+				("Client", client_name),
+				("Email", client_email),
+			],
+			right_rows=[
+				("Category", str(quote.category_label or "-")),
+				("Valid until", valid_until),
+				("Prepared by", prepared_by),
+			],
+		),
+		Spacer(1, 12),
 	]
 
 	items = list(quote.items.all())
-	rows: list[list[str]] = []
+	rows: list[list[object]] = []
 	for it in items:
-		rows.append([
-			(it.item_name or it.description or "-")[:60],
-			str(it.quantity),
-			_money(it.unit_price),
-			_money(it.line_total()),
-		])
+		desc = (it.item_name or it.description or "-")
+		rows.append(
+			[
+				Paragraph(desc, item_style),
+				Paragraph(str(it.quantity), item_style),
+				Paragraph(_money(it.unit_price), item_style),
+				Paragraph(_money(it.line_total()), item_style),
+			]
+		)
 	if not rows:
-		rows = [["(No items)", "-", "-", "-"]]
+		rows = [[Paragraph("(No items)", item_style), "-", "-", "-"]]
 
 	data = [["Item", "Qty", "Unit Price", "Line Total"]] + rows
-	table = Table(data, repeatRows=1, colWidths=[90 * mm, 20 * mm, 35 * mm, 35 * mm])
+	table = Table(data, repeatRows=1, colWidths=[92 * mm, 16 * mm, 35 * mm, 35 * mm])
 	table.setStyle(
 		TableStyle(
 			[
@@ -778,6 +1008,12 @@ def _build_quotation_pdf_bytes(quote, *, proforma: bool = False) -> bytes:
 				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
 				("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
 				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("ALIGN", (1, 1), (1, -1), "RIGHT"),
+				("ALIGN", (2, 1), (-1, -1), "RIGHT"),
+				("LEFTPADDING", (0, 0), (-1, -1), 6),
+				("RIGHTPADDING", (0, 0), (-1, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 4),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
 				("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
 				("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
 				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -787,20 +1023,37 @@ def _build_quotation_pdf_bytes(quote, *, proforma: bool = False) -> bytes:
 	elements.append(table)
 
 	discount = (quote.discount_amount or Decimal("0.00")).quantize(Decimal("0.01"))
-	elements += [
-		Spacer(1, 10),
-		Paragraph(f"Subtotal: {quote.currency} {_money(quote.subtotal())}", styles["Normal"]),
-	]
+	amount_rows: list[list[str]] = [["Subtotal", f"{quote.currency} {_money(quote.subtotal())}"]]
 	if discount > Decimal("0.00"):
-		elements.append(Paragraph(f"Discount: {quote.currency} {_money(discount)}", styles["Normal"]))
+		amount_rows.append(["Discount", f"{quote.currency} {_money(discount)}"])
 	if quote.vat_enabled:
-		elements.append(Paragraph(f"VAT ({quote.vat_rate * 100:.0f}%): {quote.currency} {_money(quote.vat_amount())}", styles["Normal"]))
+		amount_rows.append(["VAT", f"{quote.currency} {_money(quote.vat_amount())}"])
 	else:
-		elements.append(Paragraph("VAT: Not applied", styles["Normal"]))
-	elements.append(Paragraph(f"Total: {quote.currency} {_money(quote.total())}", styles["Heading3"]))
+		amount_rows.append(["VAT", "Not applied"])
+	amount_rows.append(["Total", f"{quote.currency} {_money(quote.total())}"])
+
+	amount_table = Table(amount_rows, colWidths=[70 * mm, 50 * mm], hAlign="RIGHT")
+	amount_table.setStyle(
+		TableStyle(
+			[
+				("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+				("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+				("FONTSIZE", (0, 0), (-1, -1), 10),
+				("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
+				("TOPPADDING", (0, 0), (-1, -1), 3),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+				("LINEABOVE", (0, -1), (-1, -1), 0.8, colors.HexColor("#0d6efd")),
+			]
+		)
+	)
+	elements += [Spacer(1, 12), amount_table]
 
 	if quote.notes:
-		elements += [Spacer(1, 8), Paragraph("Notes:", styles["Heading4"]), Paragraph(quote.notes, styles["Normal"])]
+		elements += [
+			Spacer(1, 10),
+			Paragraph("Notes", styles["pdf_section"]),
+			Paragraph(quote.notes, styles["Normal"]),
+		]
 
 	doc.build(
 		elements,
@@ -813,22 +1066,36 @@ def _build_quotation_pdf_bytes(quote, *, proforma: bool = False) -> bytes:
 
 
 @login_required
+@xframe_options_sameorigin
 def quotation_pdf(request, quotation_id: int):
 	from sales.models import Quotation
 	quote = get_object_or_404(Quotation.objects.select_related("client", "created_by"), pk=quotation_id)
 	pdf_bytes = _build_quotation_pdf_bytes(quote, proforma=False)
+	client_label = str(quote.client).replace(" ", "_")[:40] or "Client"
+	filename = f"Quotation_{client_label}_{quote.number}.pdf"
 	response = HttpResponse(pdf_bytes, content_type="application/pdf")
-	response["Content-Disposition"] = f'attachment; filename="{quote.number}.pdf"'
+	extra_inline = _get_str(request, "inline")
+	if extra_inline in {"1", "true", "yes", "on"}:
+		response["Content-Disposition"] = f'inline; filename="{filename}"'
+	else:
+		response["Content-Disposition"] = f'attachment; filename="{filename}"'
 	return response
 
 
 @login_required
+@xframe_options_sameorigin
 def proforma_pdf(request, quotation_id: int):
 	from sales.models import Quotation
 	quote = get_object_or_404(Quotation.objects.select_related("client", "created_by"), pk=quotation_id)
 	pdf_bytes = _build_quotation_pdf_bytes(quote, proforma=True)
+	client_label = str(quote.client).replace(" ", "_")[:40] or "Client"
+	filename = f"Proforma_{client_label}_{quote.number}.pdf"
 	response = HttpResponse(pdf_bytes, content_type="application/pdf")
-	response["Content-Disposition"] = f'attachment; filename="PROFORMA-{quote.number}.pdf"'
+	extra_inline = _get_str(request, "inline")
+	if extra_inline in {"1", "true", "yes", "on"}:
+		response["Content-Disposition"] = f'inline; filename="{filename}"'
+	else:
+		response["Content-Disposition"] = f'attachment; filename="{filename}"'
 	return response
 
 
@@ -853,6 +1120,8 @@ def send_quotation(request, quotation_id: int):
 		return redirect("quotation_detail", quotation_id=quote.id)
 
 	pdf_bytes = _build_quotation_pdf_bytes(quote, proforma=False)
+	client_label = str(quote.client).replace(" ", "_")[:40] or "Client"
+	filename = f"Quotation_{client_label}_{quote.number}.pdf"
 	subject = f"Quotation {quote.number}"
 	body = (
 		f"Dear {quote.client},\n\n"
@@ -865,7 +1134,7 @@ def send_quotation(request, quotation_id: int):
 		from_email=settings.DEFAULT_FROM_EMAIL,
 		to=[client_email],
 	)
-	msg.attach(filename=f"{quote.number}.pdf", content=pdf_bytes, mimetype="application/pdf")
+	msg.attach(filename=filename, content=pdf_bytes, mimetype="application/pdf")
 	try:
 		msg.send(fail_silently=False)
 		related_invoice_id = Invoice.objects.filter(quotation=quote).values_list("id", flat=True).first()
@@ -877,7 +1146,7 @@ def send_quotation(request, quotation_id: int):
 			doc_type=Document.DocumentType.QUOTATION,
 			title=f"Quotation {quote.number}",
 			uploaded_by=request.user,
-			file=ContentFile(pdf_bytes, name=f"{quote.number}.pdf"),
+			file=ContentFile(pdf_bytes, name=filename),
 		)
 		messages.success(request, "Quotation sent to client.")
 	except Exception:
@@ -888,7 +1157,7 @@ def send_quotation(request, quotation_id: int):
 @login_required
 def convert_quotation_to_invoice(request, quotation_id: int):
 	from sales.models import Quotation
-	from invoices.models import Invoice, InvoiceItem
+	from invoices.models import Invoice
 
 	quote = get_object_or_404(Quotation.objects.select_related("client"), pk=quotation_id)
 	if request.method != "POST":
@@ -903,14 +1172,28 @@ def convert_quotation_to_invoice(request, quotation_id: int):
 		messages.error(request, "Only Approved quotations can be converted to an invoice.")
 		return redirect("quotation_detail", quotation_id=quote.id)
 
+	invoice = _convert_quotation_to_invoice_internal(quote=quote, actor=request.user)
+	messages.success(request, "Quotation converted to invoice.")
+	return redirect("invoice_detail", invoice_id=invoice.id)
+
+
+def _convert_quotation_to_invoice_internal(*, quote, actor):
+	"""Create an invoice from an Approved quotation and mark quotation as Converted."""
+	from sales.models import Quotation
+	from invoices.models import Invoice, InvoiceItem
+
+	if quote.status != Quotation.Status.ACCEPTED:
+		raise ValueError("Quotation must be approved before conversion")
+
 	invoice = Invoice.objects.create(
+		branch_id=getattr(quote, "branch_id", None),
 		client=quote.client,
 		quotation=quote,
-		created_by=request.user,
+		created_by=actor,
 		currency=quote.currency,
 		vat_rate=(quote.vat_rate if quote.vat_enabled else Decimal("0.00")),
 		notes=(quote.notes or ""),
-		prepared_by_name=getattr(request.user, "email", "") or str(request.user),
+		prepared_by_name=getattr(actor, "email", "") or str(actor),
 	)
 	for it in quote.items.all():
 		InvoiceItem.objects.create(
@@ -919,6 +1202,7 @@ def convert_quotation_to_invoice(request, quotation_id: int):
 			description=(it.item_name or it.description or "Item"),
 			quantity=it.quantity,
 			unit_price=it.unit_price,
+			vat_exempt=getattr(it, "vat_exempt", False),
 		)
 	if (quote.discount_amount or Decimal("0.00")) > Decimal("0.00"):
 		InvoiceItem.objects.create(
@@ -930,13 +1214,14 @@ def convert_quotation_to_invoice(request, quotation_id: int):
 
 	quote.status = Quotation.Status.CONVERTED
 	quote.save(update_fields=["status"])
-	messages.success(request, "Quotation converted to invoice.")
-	return redirect("invoice_detail", invoice_id=invoice.id)
+	return invoice
 
 
 def _money(val) -> str:
+	"""Format monetary amounts consistently across PDFs/exports."""
 	try:
-		return f"{val:,.2f}"
+		from core.templatetags.formatting import money as money_filter
+		return money_filter(val)
 	except Exception:
 		return str(val)
 
@@ -962,13 +1247,17 @@ def _pdf_branding_static_paths() -> tuple[str | None, str | None]:
 def _pdf_draw_header_footer(canvas, doc, *, title: str) -> None:
 	"""Draw a branded header/footer on each PDF page."""
 	from reportlab.platypus import Frame, Paragraph
-	from reportlab.lib.styles import ParagraphStyle
 
 	page_width, page_height = doc.pagesize
 	left = doc.leftMargin
 	right = page_width - doc.rightMargin
 
-	bar_h = 62
+	# Responsive sizing for A4 vs A5 pages.
+	bar_h = 62 if page_height >= 750 else 48
+	title_font = 13 if page_height >= 750 else 11
+	logo_h = 34 if page_height >= 750 else 26
+	logo_w = 210 if page_height >= 750 else 160
+	footer_line_y = 58 if page_height >= 750 else 44
 	canvas.saveState()
 
 	# Header bar (blue) + white logo
@@ -978,9 +1267,7 @@ def _pdf_draw_header_footer(canvas, doc, *, title: str) -> None:
 	svg_path, png_path = _pdf_branding_static_paths()
 	logo_drawn = False
 	logo_x = left
-	logo_y = page_height - bar_h + 14
-	logo_w = 210
-	logo_h = 34
+	logo_y = page_height - bar_h + (14 if page_height >= 750 else 12)
 	if svg_path:
 		try:
 			from svglib.svglib import svg2rlg
@@ -1002,23 +1289,35 @@ def _pdf_draw_header_footer(canvas, doc, *, title: str) -> None:
 
 	# Document title on the right
 	canvas.setFillColor(colors.white)
-	canvas.setFont("Helvetica-Bold", 13)
-	canvas.drawRightString(right, page_height - 24, title)
+	canvas.setFont("Helvetica-Bold", title_font)
+	canvas.drawRightString(right, page_height - (24 if page_height >= 750 else 22), title)
 
 	# Footer
 	canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
 	canvas.setLineWidth(0.6)
-	canvas.line(left, 58, right, 58)
+	canvas.line(left, footer_line_y, right, footer_line_y)
 
 	footer_style = ParagraphStyle(
 		"pdf_footer",
 		fontName="Helvetica",
-		fontSize=8,
-		leading=9,
+		fontSize=(8 if page_height >= 750 else 7),
+		leading=(9 if page_height >= 750 else 8),
 		textColor=colors.HexColor("#334155"),
 		alignment=1,
 	)
-	footer_frame = Frame(left, 18, right - left, 34, leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, showBoundary=0)
+	footer_bottom = 12 if page_height >= 750 else 10
+	footer_frame_h = max(22, footer_line_y - footer_bottom - 6)
+	footer_frame = Frame(
+		left,
+		footer_bottom,
+		right - left,
+		footer_frame_h,
+		leftPadding=0,
+		rightPadding=0,
+		topPadding=0,
+		bottomPadding=0,
+		showBoundary=0,
+	)
 	footer_frame.addFromList(
 		[
 			Paragraph(_COMPANY_FOOTER_LINE_1, footer_style),
@@ -1028,6 +1327,53 @@ def _pdf_draw_header_footer(canvas, doc, *, title: str) -> None:
 	)
 
 	canvas.restoreState()
+
+
+def _pdf_kv_table(*, styles, left_rows: list[tuple[str, str]], right_rows: list[tuple[str, str]]):
+	"""Two-column key/value table for PDFs."""
+	label_style = ParagraphStyle(
+		"pdf_kv_label",
+		parent=styles["Normal"],
+		fontSize=8.5,
+		leading=10,
+		textColor=colors.HexColor("#475569"),
+	)
+	value_style = ParagraphStyle(
+		"pdf_kv_value",
+		parent=styles["Normal"],
+		fontSize=10,
+		leading=12,
+		textColor=colors.HexColor("#0f172a"),
+	)
+
+	max_rows = max(len(left_rows), len(right_rows))
+	rows = []
+	for i in range(max_rows):
+		lk, lv = left_rows[i] if i < len(left_rows) else ("", "")
+		rk, rv = right_rows[i] if i < len(right_rows) else ("", "")
+		rows.append(
+			[
+				Paragraph(f"<b>{lk}</b><br/>{lv}", value_style) if lk else "",
+				Paragraph(f"<b>{rk}</b><br/>{rv}", value_style) if rk else "",
+			]
+		)
+
+	t = Table(rows, colWidths=["50%", "50%"])
+	t.setStyle(
+		TableStyle(
+			[
+				("BACKGROUND", (0, 0), (-1, -1), colors.whitesmoke),
+				("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+				("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e2e8f0")),
+				("LEFTPADDING", (0, 0), (-1, -1), 8),
+				("RIGHTPADDING", (0, 0), (-1, -1), 8),
+				("TOPPADDING", (0, 0), (-1, -1), 6),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+			]
+		)
+	)
+	return t
 
 
 def _build_invoice_pdf_bytes(invoice) -> bytes:
@@ -1042,8 +1388,26 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 		title=title,
 		topMargin=90,
 		bottomMargin=72,
+		leftMargin=36,
+		rightMargin=36,
 	)
 	styles = getSampleStyleSheet()
+	styles.add(
+		ParagraphStyle(
+			"pdf_section",
+			parent=styles["Heading3"],
+			textColor=colors.HexColor("#0f172a"),
+			spaceBefore=8,
+			spaceAfter=4,
+		)
+	)
+	item_style = ParagraphStyle(
+		"pdf_item",
+		parent=styles["Normal"],
+		fontSize=9.5,
+		leading=11,
+		textColor=colors.HexColor("#0f172a"),
+	)
 
 	client_name = str(invoice.client)
 	client_email = getattr(invoice.client, "email", "") or "-"
@@ -1055,30 +1419,41 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 
 	elements = [
 		Paragraph(f"Invoice {invoice.number}", styles["Title"]),
-		Spacer(1, 6),
-		Paragraph(f"Client: {client_name}", styles["Normal"]),
-		Paragraph(f"Email: {client_email}", styles["Normal"]),
-		Paragraph(f"Issued: {issued} &nbsp;&nbsp; Due: {due}", styles["Normal"]),
-		Paragraph(f"Prepared by: {prepared_by}", styles["Normal"]),
-		Paragraph(f"Signed by: {signed_by} &nbsp;&nbsp; Signed at: {signed_at}", styles["Normal"]),
-		Spacer(1, 10),
+		Spacer(1, 8),
+		_pdf_kv_table(
+			styles=styles,
+			left_rows=[
+				("Client", client_name),
+				("Email", client_email),
+				("Prepared by", prepared_by),
+			],
+			right_rows=[
+				("Issued", issued),
+				("Due", due),
+				("Signed", f"{signed_by} ({signed_at})" if signed_by != "-" else "-"),
+			],
+		),
+		Spacer(1, 12),
 	]
 
 	items = list(invoice.items.all())
-	rows: list[list[str]] = []
+	rows: list[list[object]] = []
 	for it in items:
-		rows.append([
-			(it.description or "-")[:60],
-			str(it.quantity),
-			_money(it.unit_price),
-			_money(it.line_total()),
-		])
+		desc = (it.description or "-")
+		rows.append(
+			[
+				Paragraph(desc, item_style),
+				Paragraph(str(it.quantity), item_style),
+				Paragraph(_money(it.unit_price), item_style),
+				Paragraph(_money(it.line_total()), item_style),
+			]
+		)
 
 	if not rows:
 		rows = [["(No items)", "-", "-", "-"]]
 
 	data = [["Description", "Qty", "Unit Price", "Line Total"]] + rows
-	table = Table(data, repeatRows=1, colWidths=[90 * mm, 20 * mm, 35 * mm, 35 * mm])
+	table = Table(data, repeatRows=1, colWidths=[92 * mm, 16 * mm, 35 * mm, 35 * mm])
 	table.setStyle(
 		TableStyle(
 			[
@@ -1086,6 +1461,12 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
 				("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
 				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("ALIGN", (1, 1), (1, -1), "RIGHT"),
+				("ALIGN", (2, 1), (-1, -1), "RIGHT"),
+				("LEFTPADDING", (0, 0), (-1, -1), 6),
+				("RIGHTPADDING", (0, 0), (-1, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 4),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
 				("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
 				("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
 				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -1094,14 +1475,32 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 	)
 	elements.append(table)
 
-	elements += [
-		Spacer(1, 10),
-		Paragraph(f"Subtotal: {invoice.currency} {_money(invoice.subtotal())}", styles["Normal"]),
-		Paragraph(f"VAT ({invoice.vat_rate * 100:.0f}%): {invoice.currency} {_money(invoice.vat_amount())}", styles["Normal"]),
-		Paragraph(f"Total: {invoice.currency} {_money(invoice.total())}", styles["Heading3"]),
+	amount_rows = [
+		["Subtotal", f"{invoice.currency} {_money(invoice.subtotal())}"],
+		["VAT", f"{invoice.currency} {_money(invoice.vat_amount())}"],
+		["Total", f"{invoice.currency} {_money(invoice.total())}"],
 	]
+	amount_table = Table(amount_rows, colWidths=[70 * mm, 50 * mm], hAlign="RIGHT")
+	amount_table.setStyle(
+		TableStyle(
+			[
+				("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+				("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+				("FONTSIZE", (0, 0), (-1, -1), 10),
+				("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
+				("TOPPADDING", (0, 0), (-1, -1), 3),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+				("LINEABOVE", (0, -1), (-1, -1), 0.8, colors.HexColor("#0d6efd")),
+			]
+		)
+	)
+	elements += [Spacer(1, 12), amount_table]
 	if invoice.notes:
-		elements += [Spacer(1, 8), Paragraph("Notes:", styles["Heading4"]), Paragraph(invoice.notes, styles["Normal"])]
+		elements += [
+			Spacer(1, 10),
+			Paragraph("Notes", styles["pdf_section"]),
+			Paragraph(invoice.notes, styles["Normal"]),
+		]
 
 	doc.build(
 		elements,
@@ -1120,10 +1519,12 @@ def _build_receipt_pdf_bytes(payment) -> bytes:
 	title = f"Receipt {payment.receipt_number}"
 	doc = SimpleDocTemplate(
 		buffer,
-		pagesize=A4,
+		pagesize=A5,
 		title=title,
-		topMargin=90,
-		bottomMargin=72,
+		topMargin=76,
+		bottomMargin=56,
+		leftMargin=28,
+		rightMargin=28,
 	)
 	styles = getSampleStyleSheet()
 
@@ -1131,29 +1532,42 @@ def _build_receipt_pdf_bytes(payment) -> bytes:
 
 	elements = [
 		Paragraph(f"Receipt {payment.receipt_number}", styles["Title"]),
-		Spacer(1, 8),
-		Paragraph(f"Invoice: {invoice.number}", styles["Normal"]),
-		Paragraph(f"Client: {invoice.client}", styles["Normal"]),
-		Paragraph(f"Paid at: {paid_at}", styles["Normal"]),
-		Paragraph(f"Method: {payment.method_label}", styles["Normal"]),
-		Paragraph(f"Reference: {payment.reference or '-'}", styles["Normal"]),
-		Spacer(1, 12),
+		Spacer(1, 6),
+		_pdf_kv_table(
+			styles=styles,
+			left_rows=[
+				("Invoice", str(invoice.number or "-")),
+				("Client", str(invoice.client or "-")),
+			],
+			right_rows=[
+				("Paid at", paid_at),
+				("Method", str(payment.method_label or "-")),
+				("Reference", str(payment.reference or "-")),
+			],
+		),
+		Spacer(1, 10),
 	]
 
+	from reportlab.lib.units import mm
 	data = [
-		["Description", "Amount"],
+		["Summary", "Amount"],
 		["Payment", f"{invoice.currency} {_money(payment.amount)}"],
 		["Invoice Total", f"{invoice.currency} {_money(invoice.total())}"],
 		["Total Paid", f"{invoice.currency} {_money(invoice.amount_paid())}"],
 		["Outstanding", f"{invoice.currency} {_money(invoice.outstanding_balance())}"],
 	]
-	table = Table(data, repeatRows=1)
+	table = Table(data, repeatRows=1, colWidths=[85 * mm, 45 * mm])
 	table.setStyle(
 		TableStyle(
 			[
 				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
 				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
 				("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+				("ALIGN", (1, 1), (1, -1), "RIGHT"),
+				("LEFTPADDING", (0, 0), (-1, -1), 6),
+				("RIGHTPADDING", (0, 0), (-1, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 4),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
 				("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
 				("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
 				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -1179,6 +1593,7 @@ def _build_receipt_pdf_bytes(payment) -> bytes:
 def invoice_detail(request, invoice_id: int):
 	from invoices.models import Invoice
 	from invoices.forms import InvoiceSignatureForm, PaymentForm
+	from invoices.models import PaymentRefund
 	from documents.models import Document
 
 	invoice = (
@@ -1186,6 +1601,12 @@ def invoice_detail(request, invoice_id: int):
 		.prefetch_related("items", "payments")
 		.get(pk=invoice_id)
 	)
+	# Ensure invoice status stays consistent with payments, including
+	# rounding-tolerant outstanding balance.
+	try:
+		invoice.refresh_status_from_payments(save=True)
+	except Exception:
+		pass
 
 	invoice_docs = Document.objects.filter(related_invoice=invoice).order_by("-uploaded_at", "-version")
 	receipt_docs = Document.objects.filter(
@@ -1195,12 +1616,16 @@ def invoice_detail(request, invoice_id: int):
 	for p in invoice.payments.all():
 		p.archived_receipt_doc = receipt_doc_by_payment_id.get(p.id)
 
+	refunds = PaymentRefund.objects.select_related("payment", "refunded_by").filter(invoice_id=invoice.id)
+
 	payment_form = PaymentForm(invoice=invoice)
 	signature_form = InvoiceSignatureForm(initial={"name": invoice.signed_by_name or ""})
 	context = {
 		"invoice": invoice,
 		"items": invoice.items.all(),
 		"payments": invoice.payments.all(),
+		"refunds": refunds,
+		"is_admin": _is_admin(request.user),
 		"invoice_documents": invoice_docs[:20],
 		"payment_form": payment_form,
 		"signature_form": signature_form,
@@ -1209,10 +1634,85 @@ def invoice_detail(request, invoice_id: int):
 			"vat": invoice.vat_amount(),
 			"total": invoice.total(),
 			"paid": invoice.amount_paid(),
+			"refunded": invoice.amount_refunded(),
 			"balance": invoice.outstanding_balance(),
 		},
 	}
 	return render(request, "modules/invoice_detail.html", context)
+
+
+@login_required
+def refund_payment(request, invoice_id: int, payment_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+
+	from invoices.models import Payment
+	from invoices.forms import PaymentRefundForm
+
+	payment = Payment.objects.select_related("invoice", "invoice__client").get(pk=payment_id, invoice_id=invoice_id)
+	if not getattr(payment, "is_refund_window_open", True):
+		deadline_local = timezone.localtime(payment.refund_deadline)
+		messages.error(
+			request,
+			f"Refund window expired. Refunds are allowed within 21 days of payment date (deadline: {deadline_local:%Y-%m-%d %H:%M}).",
+		)
+		return redirect("invoice_detail", invoice_id=invoice_id)
+
+	if request.method == "POST":
+		form = PaymentRefundForm(request.POST, payment=payment)
+		if form.is_valid():
+			refund = form.save(commit=False)
+			refund.refunded_by = request.user
+			refund.save()
+			messages.success(request, "Refund recorded.")
+			return redirect("invoice_detail", invoice_id=invoice_id)
+	else:
+		form = PaymentRefundForm(payment=payment)
+
+	return render(
+		request,
+		"modules/refund_payment.html",
+		{
+			"invoice": payment.invoice,
+			"payment": payment,
+			"form": form,
+		},
+	)
+
+
+@login_required
+def delete_invoice_payment(request, invoice_id: int, payment_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+	if request.method != "POST":
+		return redirect("invoice_detail", invoice_id=invoice_id)
+
+	from invoices.models import Invoice, Payment
+
+	invoice = Invoice.objects.get(pk=invoice_id)
+	Payment.objects.filter(pk=payment_id, invoice_id=invoice_id).delete()
+	invoice.refresh_status_from_payments(save=True)
+	messages.success(request, "Payment deleted.")
+	return redirect("invoice_detail", invoice_id=invoice_id)
+
+
+@login_required
+def delete_payment_refund(request, invoice_id: int, refund_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+	if request.method != "POST":
+		return redirect("invoice_detail", invoice_id=invoice_id)
+
+	from invoices.models import Invoice, PaymentRefund
+
+	invoice = Invoice.objects.get(pk=invoice_id)
+	PaymentRefund.objects.filter(pk=refund_id, invoice_id=invoice_id).delete()
+	invoice.refresh_status_from_payments(save=True)
+	messages.success(request, "Refund deleted.")
+	return redirect("invoice_detail", invoice_id=invoice_id)
 
 
 @login_required
@@ -1230,6 +1730,10 @@ def sign_invoice(request, invoice_id: int):
 		invoice.signed_by_name = name
 		invoice.signed_at = timezone.now() if name else None
 		invoice.save(update_fields=["signed_by_name", "signed_at"])
+		try:
+			invoice.deduct_stock_if_needed()
+		except Exception:
+			pass
 		messages.success(request, "Invoice signed.")
 	return redirect("invoice_detail", invoice_id=invoice_id)
 
@@ -1324,14 +1828,21 @@ def add_invoice_payment(request, invoice_id: int):
 
 
 @login_required
+@xframe_options_sameorigin
 def payment_receipt_pdf(request, invoice_id: int, payment_id: int):
 	from invoices.models import Payment
 
 	payment = Payment.objects.select_related("invoice", "invoice__client").get(pk=payment_id, invoice_id=invoice_id)
 	pdf_bytes = _build_receipt_pdf_bytes(payment)
-	filename = f"receipt-{payment.receipt_number or payment.pk}.pdf"
+	client_label = str(payment.invoice.client).replace(" ", "_")[:40] if payment.invoice and payment.invoice.client else "Client"
+	reference = payment.receipt_number or str(payment.pk)
+	filename = f"Receipt_{client_label}_{reference}.pdf"
 	response = HttpResponse(pdf_bytes, content_type="application/pdf")
-	response["Content-Disposition"] = f'attachment; filename="{filename}"'
+	extra_inline = _get_str(request, "inline")
+	if extra_inline in {"1", "true", "yes", "on"}:
+		response["Content-Disposition"] = f'inline; filename="{filename}"'
+	else:
+		response["Content-Disposition"] = f'attachment; filename="{filename}"'
 	return response
 
 
@@ -1371,7 +1882,9 @@ def send_payment_receipt(request, invoice_id: int, payment_id: int):
 		from_email=settings.DEFAULT_FROM_EMAIL,
 		to=[client_email],
 	)
-	filename = f"receipt-{payment.receipt_number or payment.pk}.pdf"
+	client_label = str(payment.invoice.client).replace(" ", "_")[:40] if payment.invoice and payment.invoice.client else "Client"
+	reference = payment.receipt_number or str(payment.pk)
+	filename = f"Receipt_{client_label}_{reference}.pdf"
 	msg.attach(filename=filename, content=pdf_bytes, mimetype="application/pdf")
 	try:
 		msg.send(fail_silently=False)
@@ -1393,14 +1906,20 @@ def send_payment_receipt(request, invoice_id: int, payment_id: int):
 
 
 @login_required
+@xframe_options_sameorigin
 def invoice_pdf(request, invoice_id: int):
 	from invoices.models import Invoice
 
 	invoice = Invoice.objects.select_related("client").prefetch_related("items", "payments").get(pk=invoice_id)
 	pdf_bytes = _build_invoice_pdf_bytes(invoice)
-	filename = f"invoice-{invoice.number}.pdf"
+	client_label = str(invoice.client).replace(" ", "_")[:40] or "Client"
+	filename = f"Invoice_{client_label}_{invoice.number}.pdf"
 	response = HttpResponse(pdf_bytes, content_type="application/pdf")
-	response["Content-Disposition"] = f'attachment; filename="{filename}"'
+	extra_inline = _get_str(request, "inline")
+	if extra_inline in {"1", "true", "yes", "on"}:
+		response["Content-Disposition"] = f'inline; filename="{filename}"'
+	else:
+		response["Content-Disposition"] = f'attachment; filename="{filename}"'
 	return response
 
 
@@ -1433,7 +1952,8 @@ def send_invoice(request, invoice_id: int):
 	msg.attach_alternative(html_body, "text/html")
 
 	pdf_bytes = _build_invoice_pdf_bytes(invoice)
-	filename = f"invoice-{invoice.number}.pdf"
+	client_label = str(invoice.client).replace(" ", "_")[:40] or "Client"
+	filename = f"Invoice_{client_label}_{invoice.number}.pdf"
 	msg.attach(filename=filename, content=pdf_bytes, mimetype="application/pdf")
 	try:
 		msg.send(fail_silently=False)
@@ -1478,6 +1998,7 @@ def export_invoices_csv(request):
 
 
 @login_required
+@xframe_options_sameorigin
 def export_invoices_pdf(request):
 	"""Download invoices as PDF."""
 	from invoices.models import Invoice
@@ -1494,11 +2015,13 @@ def export_invoices_pdf(request):
 			inv.due_at.isoformat() if inv.due_at else "-",
 		])
 
+	extra_inline = _get_str(request, "inline")
 	return _pdf_response(
 		title="Invoices",
 		header=["Number", "Client", "Status", "Issued", "Due"],
 		rows=rows,
 		filename="invoices.pdf",
+		inline=extra_inline in {"1", "true", "yes", "on"},
 	)
 
 
@@ -1519,6 +2042,7 @@ def inventory_view(request):
 		"products": products_qs[:50],
 		"products_total": products_qs.count(),
 		"products_low_stock": low_stock_count,
+		"is_admin": _is_admin(request.user),
 		"branches": Branch.objects.filter(is_active=True),
 		"categories": ProductCategory.objects.all().order_by("name"),
 		"suppliers": Supplier.objects.all().order_by("name"),
@@ -1535,22 +2059,145 @@ def inventory_view(request):
 	return render(request, "modules/inventory.html", context)
 
 
+@login_required
+def edit_inventory(request, product_id: int):
+	from inventory.forms import ProductForm
+	from inventory.models import Product
+
+	product = get_object_or_404(Product, pk=product_id)
+	if request.method == "POST":
+		form = ProductForm(request.POST, instance=product)
+		if form.is_valid():
+			form.save()
+			messages.success(request, "Product updated.")
+			return redirect("inventory")
+	else:
+		form = ProductForm(instance=product)
+
+	return render(request, "modules/edit_inventory.html", {"form": form, "product": product})
+
+
+@login_required
+def delete_inventory(request, product_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+	if request.method != "POST":
+		return redirect("inventory")
+
+	from django.db.models.deletion import ProtectedError
+	from inventory.models import Product
+
+	product = get_object_or_404(Product, pk=product_id)
+	try:
+		product.delete()
+		messages.success(request, "Product deleted.")
+	except ProtectedError:
+		# Product is referenced by invoices/stock movements. Keep history intact.
+		Product.objects.filter(pk=product.pk).update(is_active=False)
+		messages.warning(request, "Product is in use and cannot be deleted; it was deactivated instead.")
+	return redirect("inventory")
+
+
+@login_required
+def stock_movements_view(request):
+	from inventory.models import StockMovement
+	from django.db.models import Q
+
+	q = _get_str(request, "q")
+	mtype = _get_str(request, "type")
+
+	qs = StockMovement.objects.select_related("product").all().order_by("-occurred_at", "-id")
+	if q:
+		qs = qs.filter(Q(product__sku__icontains=q) | Q(product__name__icontains=q) | Q(reference__icontains=q))
+	if mtype in {"in", "out"}:
+		qs = qs.filter(movement_type=mtype)
+
+	return render(
+		request,
+		"modules/stock_movements.html",
+		{
+			"movements": qs[:200],
+			"filters": {"q": q, "type": mtype},
+		},
+	)
+
+
+@login_required
+def adjust_stock(request, product_id: int):
+	from inventory.forms import StockMovementAdjustForm
+	from inventory.models import Product
+
+	product = get_object_or_404(Product, pk=product_id)
+	if request.method == "POST":
+		form = StockMovementAdjustForm(request.POST, product=product)
+		if form.is_valid():
+			form.save()
+			messages.success(request, "Stock updated.")
+			return redirect("inventory")
+	else:
+		initial = {}
+		movement_type = _get_str(request, "type")
+		if movement_type in {"in", "out"}:
+			initial["movement_type"] = movement_type
+		form = StockMovementAdjustForm(product=product, initial=initial)
+
+	return render(request, "modules/adjust_stock.html", {"product": product, "form": form})
+
+
 def suppliers_view(request):
 	"""Suppliers register (list + filters)."""
 	from inventory.models import Supplier
 
 	q = (request.GET.get("q") or "").strip()
 	is_active = (request.GET.get("is_active") or "").strip()
+	product_name = (request.GET.get("product") or "").strip()
+	min_price_raw = (request.GET.get("min_price") or "").strip()
+	max_price_raw = (request.GET.get("max_price") or "").strip()
+	min_price = None
+	max_price = None
+	try:
+		if min_price_raw:
+			min_price = Decimal(min_price_raw)
+	except Exception:
+		min_price = None
+	try:
+		if max_price_raw:
+			max_price = Decimal(max_price_raw)
+	except Exception:
+		max_price = None
 
 	qs = Supplier.objects.all().order_by("name")
 	if q:
 		qs = qs.filter(name__icontains=q)
 	if is_active in {"0", "1"}:
 		qs = qs.filter(is_active=(is_active == "1"))
+	if product_name:
+		qs = qs.filter(
+			models.Q(product_prices__item_name__icontains=product_name)
+			| models.Q(product_prices__product__name__icontains=product_name)
+		)
+	if min_price is not None:
+		qs = qs.filter(product_prices__unit_price__gte=min_price)
+	if max_price is not None:
+		qs = qs.filter(product_prices__unit_price__lte=max_price)
+	qs = qs.distinct().prefetch_related("product_prices__product")
+
+	# Attach a small sample of what each supplier supplies and at which rate.
+	suppliers = list(qs)
+	for s in suppliers:
+		prices = [p for p in s.product_prices.all() if p.is_active][:3]
+		setattr(s, "sample_prices", prices)
 
 	context = {
-		"suppliers": qs,
-		"filters": {"q": q, "is_active": is_active},
+		"suppliers": suppliers,
+		"filters": {
+			"q": q,
+			"is_active": is_active,
+			"product": product_name,
+			"min_price": min_price_raw,
+			"max_price": max_price_raw,
+		},
 	}
 	return render(request, "modules/suppliers.html", context)
 
@@ -1561,8 +2208,10 @@ def add_supplier(request):
 	if request.method == "POST":
 		form = SupplierForm(request.POST)
 		if form.is_valid():
-			form.save()
-			return redirect("suppliers")
+			supplier = form.save()
+			# After creating a supplier, go straight to its page where
+			# you can capture what they supply and at which rate.
+			return redirect("supplier_detail", supplier_id=supplier.id)
 	else:
 		form = SupplierForm()
 
@@ -1582,7 +2231,11 @@ def edit_supplier(request, supplier_id: int):
 	else:
 		form = SupplierForm(instance=supplier)
 
-	return render(request, "modules/edit_supplier.html", {"form": form, "supplier": supplier})
+	return render(
+		request,
+		"modules/edit_supplier.html",
+		{"form": form, "supplier": supplier},
+	)
 
 
 def supplier_detail(request, supplier_id: int):
@@ -1639,6 +2292,53 @@ def add_supplier_price(request):
 	return render(request, "modules/add_supplier_price.html", {"form": form})
 
 
+@login_required
+def edit_supplier_price(request, price_id: int):
+	"""Edit a single supplier supply/price line.
+
+	Keeps the supplier fixed but lets you adjust what they supply,
+	unit, price, minimum order, lead time, etc.
+	"""
+	from inventory.forms import SupplierProductPriceForm
+	from inventory.models import SupplierProductPrice
+
+	price = get_object_or_404(SupplierProductPrice.objects.select_related("supplier"), pk=price_id)
+	supplier = price.supplier
+	if request.method == "POST":
+		form = SupplierProductPriceForm(request.POST, instance=price)
+		# Ensure supplier does not accidentally change via POST.
+		if "supplier" in form.fields:
+			form.fields["supplier"].disabled = True
+		if form.is_valid():
+			obj = form.save(commit=False)
+			obj.supplier = supplier
+			obj.save()
+			messages.success(request, "Supply/price updated.")
+			return redirect("supplier_detail", supplier_id=supplier.id)
+	else:
+		form = SupplierProductPriceForm(instance=price, initial={"supplier": supplier})
+		if "supplier" in form.fields:
+			form.fields["supplier"].disabled = True
+
+	return render(
+		request,
+		"modules/edit_supplier_price.html",
+		{"form": form, "supplier": supplier, "price": price},
+	)
+
+
+@login_required
+def delete_supplier_price(request, price_id: int):
+	from inventory.models import SupplierProductPrice
+
+	price = get_object_or_404(SupplierProductPrice, pk=price_id)
+	supplier_id = price.supplier_id
+	if request.method == "POST":
+		price.delete()
+		messages.success(request, "Supply/price deleted.")
+	return redirect("supplier_detail", supplier_id=supplier_id)
+
+
 def product_price_compare(request, product_id: int):
 	"""Compare supplier prices for a single product."""
 	from inventory.models import Product, SupplierProductPrice
@@ -1692,7 +2392,7 @@ def export_inventory_csv(request):
 	response["Content-Disposition"] = 'attachment; filename="inventory.csv"'
 
 	writer = csv.writer(response)
-	writer.writerow(["SKU", "Name", "Category", "Supplier", "Unit Price", "Stock", "Low Stock Threshold"]) 
+	writer.writerow(["SKU", "Name", "Category", "Supplier", "Unit Price", "Stock", "Reorder Level"]) 
 	qs = Product.objects.select_related("category", "supplier", "branch").all().order_by("name")
 	qs = _filter_inventory(request, qs)
 	for p in qs:
@@ -1701,7 +2401,7 @@ def export_inventory_csv(request):
 			p.name,
 			str(p.category),
 			str(p.supplier) if p.supplier else "",
-			str(p.unit_price),
+			_money(p.unit_price),
 			str(p.stock_quantity),
 			str(p.low_stock_threshold),
 		])
@@ -1709,6 +2409,7 @@ def export_inventory_csv(request):
 
 
 @login_required
+@xframe_options_sameorigin
 def export_inventory_pdf(request):
 	"""Download inventory products as PDF."""
 	from inventory.models import Product
@@ -1725,11 +2426,13 @@ def export_inventory_pdf(request):
 			("LOW" if p.stock_quantity <= p.low_stock_threshold else "OK"),
 		])
 
+	extra_inline = _get_str(request, "inline")
 	return _pdf_response(
 		title="Inventory",
 		header=["SKU", "Name", "Category", "Stock", "Status"],
 		rows=rows,
 		filename="inventory.pdf",
+		inline=extra_inline in {"1", "true", "yes", "on"},
 	)
 
 
@@ -1798,13 +2501,14 @@ def export_expenses_csv(request):
 			str(e.branch) if e.branch else "",
 			e.category,
 			e.description,
-			str(e.amount),
+			_money(e.amount),
 			e.reference,
 		])
 	return response
 
 
 @login_required
+@xframe_options_sameorigin
 def export_expenses_pdf(request):
 	from expenses.models import Expense
 
@@ -1817,14 +2521,16 @@ def export_expenses_pdf(request):
 			(str(e.branch) if e.branch else "-")[:18],
 			e.category,
 			(e.description or "-")[:40],
-			str(e.amount),
+			_money(e.amount),
 		])
 
+	extra_inline = _get_str(request, "inline")
 	return _pdf_response(
 		title="Expenses",
 		header=["Date", "Branch", "Category", "Description", "Amount"],
 		rows=rows,
 		filename="expenses.pdf",
+		inline=extra_inline in {"1", "true", "yes", "on"},
 	)
 
 
@@ -1904,6 +2610,7 @@ def export_appointments_csv(request):
 
 
 @login_required
+@xframe_options_sameorigin
 def export_appointments_pdf(request):
 	"""Download appointments as PDF."""
 	from appointments.models import Appointment
@@ -1920,11 +2627,13 @@ def export_appointments_pdf(request):
 			(a.assigned_to.email if a.assigned_to else "-")[:24],
 		])
 
+	extra_inline = _get_str(request, "inline")
 	return _pdf_response(
 		title="Appointments",
 		header=["Scheduled", "Client", "Type", "Status", "Assigned"],
 		rows=rows,
 		filename="appointments.pdf",
+		inline=extra_inline in {"1", "true", "yes", "on"},
 	)
 
 
@@ -1937,7 +2646,7 @@ def reports_view(request):
 	from django.db.models import Sum
 	from inventory.models import Product
 	from invoices.models import Invoice
-	from invoices.models import Payment
+	from invoices.models import Payment, PaymentRefund
 	from expenses.models import Expense
 
 	now = timezone.now()
@@ -1950,6 +2659,7 @@ def reports_view(request):
 	clients_qs = Client.objects.all()
 	invoices_qs = Invoice.objects.all()
 	payments_qs = Payment.objects.select_related("invoice").all()
+	refunds_qs = PaymentRefund.objects.select_related("invoice").all()
 	expenses_qs = Expense.objects.all()
 	appointments_qs = Appointment.objects.all()
 	products_qs = Product.objects.all()
@@ -1957,6 +2667,7 @@ def reports_view(request):
 		clients_qs = clients_qs.filter(branch_id=branch_id)
 		invoices_qs = invoices_qs.filter(branch_id=branch_id)
 		payments_qs = payments_qs.filter(invoice__branch_id=branch_id)
+		refunds_qs = refunds_qs.filter(invoice__branch_id=branch_id)
 		expenses_qs = expenses_qs.filter(branch_id=branch_id)
 		appointments_qs = appointments_qs.filter(branch_id=branch_id)
 		products_qs = products_qs.filter(branch_id=branch_id)
@@ -1964,6 +2675,7 @@ def reports_view(request):
 		invoices_qs = invoices_qs.filter(created_at__date__gte=from_date)
 		clients_qs = clients_qs.filter(created_at__date__gte=from_date)
 		payments_qs = payments_qs.filter(paid_at__date__gte=from_date)
+		refunds_qs = refunds_qs.filter(refunded_at__date__gte=from_date)
 		expenses_qs = expenses_qs.filter(expense_date__gte=from_date)
 		appointments_qs = appointments_qs.filter(created_at__date__gte=from_date)
 		products_qs = products_qs.filter(created_at__date__gte=from_date)
@@ -1971,6 +2683,7 @@ def reports_view(request):
 		invoices_qs = invoices_qs.filter(created_at__date__lte=to_date)
 		clients_qs = clients_qs.filter(created_at__date__lte=to_date)
 		payments_qs = payments_qs.filter(paid_at__date__lte=to_date)
+		refunds_qs = refunds_qs.filter(refunded_at__date__lte=to_date)
 		expenses_qs = expenses_qs.filter(expense_date__lte=to_date)
 		appointments_qs = appointments_qs.filter(created_at__date__lte=to_date)
 		products_qs = products_qs.filter(created_at__date__lte=to_date)
@@ -1980,8 +2693,12 @@ def reports_view(request):
 	invoices_total = invoices_qs.count()
 	invoices_paid = invoices_qs.filter(status=Invoice.Status.PAID).count()
 	show_income = _can_view_income(request.user)
-	revenue_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0 if show_income else None
+	payments_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0
+	refunds_total = refunds_qs.aggregate(total=Sum("amount")).get("total") or 0
+	revenue_total = (payments_total - refunds_total) if show_income else None
 	expenses_total = expenses_qs.aggregate(total=Sum("amount")).get("total") or 0
+	invoiced_total = sum((inv.total() for inv in invoices_qs), Decimal("0.00")) if show_income else None
+	outstanding_total = sum((inv.outstanding_balance() for inv in invoices_qs), Decimal("0.00")) if show_income else None
 	net_profit = (revenue_total - expenses_total) if show_income else None
 	appointments_upcoming = appointments_qs.filter(scheduled_for__gte=now).count()
 	products_total = products_qs.count()
@@ -1994,6 +2711,9 @@ def reports_view(request):
 			"invoices_total": invoices_total,
 			"invoices_paid": invoices_paid,
 			"revenue_total": revenue_total,
+			"refunds_total": refunds_total if show_income else None,
+			"invoiced_total": invoiced_total,
+			"outstanding_total": outstanding_total,
 			"expenses_total": expenses_total,
 			"net_profit": net_profit,
 			"products_total": products_total,
@@ -2021,7 +2741,7 @@ def export_reports_csv(request):
 	from django.db.models import Sum
 	from inventory.models import Product
 	from invoices.models import Invoice
-	from invoices.models import Payment
+	from invoices.models import Payment, PaymentRefund
 	from expenses.models import Expense
 
 	now = timezone.now()
@@ -2032,6 +2752,7 @@ def export_reports_csv(request):
 	clients_qs = Client.objects.all()
 	invoices_qs = Invoice.objects.all()
 	payments_qs = Payment.objects.select_related("invoice").all()
+	refunds_qs = PaymentRefund.objects.select_related("invoice").all()
 	expenses_qs = Expense.objects.all()
 	appointments_qs = Appointment.objects.all()
 	products_qs = Product.objects.all()
@@ -2039,6 +2760,7 @@ def export_reports_csv(request):
 		clients_qs = clients_qs.filter(branch_id=branch_id)
 		invoices_qs = invoices_qs.filter(branch_id=branch_id)
 		payments_qs = payments_qs.filter(invoice__branch_id=branch_id)
+		refunds_qs = refunds_qs.filter(invoice__branch_id=branch_id)
 		expenses_qs = expenses_qs.filter(branch_id=branch_id)
 		appointments_qs = appointments_qs.filter(branch_id=branch_id)
 		products_qs = products_qs.filter(branch_id=branch_id)
@@ -2046,6 +2768,7 @@ def export_reports_csv(request):
 		invoices_qs = invoices_qs.filter(created_at__date__gte=from_date)
 		clients_qs = clients_qs.filter(created_at__date__gte=from_date)
 		payments_qs = payments_qs.filter(paid_at__date__gte=from_date)
+		refunds_qs = refunds_qs.filter(refunded_at__date__gte=from_date)
 		expenses_qs = expenses_qs.filter(expense_date__gte=from_date)
 		appointments_qs = appointments_qs.filter(created_at__date__gte=from_date)
 		products_qs = products_qs.filter(created_at__date__gte=from_date)
@@ -2053,6 +2776,7 @@ def export_reports_csv(request):
 		invoices_qs = invoices_qs.filter(created_at__date__lte=to_date)
 		clients_qs = clients_qs.filter(created_at__date__lte=to_date)
 		payments_qs = payments_qs.filter(paid_at__date__lte=to_date)
+		refunds_qs = refunds_qs.filter(refunded_at__date__lte=to_date)
 		expenses_qs = expenses_qs.filter(expense_date__lte=to_date)
 		appointments_qs = appointments_qs.filter(created_at__date__lte=to_date)
 		products_qs = products_qs.filter(created_at__date__lte=to_date)
@@ -2066,13 +2790,20 @@ def export_reports_csv(request):
 	writer.writerow(["Invoices Total", invoices_qs.count()])
 	writer.writerow(["Invoices Paid", invoices_qs.filter(status=Invoice.Status.PAID).count()])
 	show_income = _can_view_income(request.user)
-	revenue_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0 if show_income else None
+	payments_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0
+	refunds_total = refunds_qs.aggregate(total=Sum("amount")).get("total") or 0
+	revenue_total = (payments_total - refunds_total) if show_income else None
 	expenses_total = expenses_qs.aggregate(total=Sum("amount")).get("total") or 0
+	invoiced_total = sum((inv.total() for inv in invoices_qs), Decimal("0.00")) if show_income else None
+	outstanding_total = sum((inv.outstanding_balance() for inv in invoices_qs), Decimal("0.00")) if show_income else None
 	if show_income:
-		writer.writerow(["Revenue (Payments)", revenue_total])
-	writer.writerow(["Expenses", expenses_total])
+		writer.writerow(["Total Invoiced", _money(invoiced_total)])
+		writer.writerow(["Revenue (Net)", _money(revenue_total)])
+		writer.writerow(["Refunds", _money(refunds_total)])
+	writer.writerow(["Expenses", _money(expenses_total)])
 	if show_income:
-		writer.writerow(["Net Profit", revenue_total - expenses_total])
+		writer.writerow(["Outstanding Balances", _money(outstanding_total)])
+		writer.writerow(["Net Profit", _money(revenue_total - expenses_total)])
 	writer.writerow(["Appointments Upcoming", appointments_qs.filter(scheduled_for__gte=now).count()])
 	writer.writerow(["Products Total", products_qs.count()])
 	writer.writerow(["Products Low Stock", products_qs.filter(stock_quantity__lte=F("low_stock_threshold")).count()])
@@ -2080,6 +2811,7 @@ def export_reports_csv(request):
 
 
 @login_required
+@xframe_options_sameorigin
 def export_reports_pdf(request):
 	"""Download report KPI summary as PDF (respects report filters)."""
 	from appointments.models import Appointment
@@ -2087,7 +2819,7 @@ def export_reports_pdf(request):
 	from django.db.models import Sum
 	from inventory.models import Product
 	from invoices.models import Invoice
-	from invoices.models import Payment
+	from invoices.models import Payment, PaymentRefund
 	from expenses.models import Expense
 
 	now = timezone.now()
@@ -2098,6 +2830,7 @@ def export_reports_pdf(request):
 	clients_qs = Client.objects.all()
 	invoices_qs = Invoice.objects.all()
 	payments_qs = Payment.objects.select_related("invoice").all()
+	refunds_qs = PaymentRefund.objects.select_related("invoice").all()
 	expenses_qs = Expense.objects.all()
 	appointments_qs = Appointment.objects.all()
 	products_qs = Product.objects.all()
@@ -2105,6 +2838,7 @@ def export_reports_pdf(request):
 		clients_qs = clients_qs.filter(branch_id=branch_id)
 		invoices_qs = invoices_qs.filter(branch_id=branch_id)
 		payments_qs = payments_qs.filter(invoice__branch_id=branch_id)
+		refunds_qs = refunds_qs.filter(invoice__branch_id=branch_id)
 		expenses_qs = expenses_qs.filter(branch_id=branch_id)
 		appointments_qs = appointments_qs.filter(branch_id=branch_id)
 		products_qs = products_qs.filter(branch_id=branch_id)
@@ -2112,6 +2846,7 @@ def export_reports_pdf(request):
 		invoices_qs = invoices_qs.filter(created_at__date__gte=from_date)
 		clients_qs = clients_qs.filter(created_at__date__gte=from_date)
 		payments_qs = payments_qs.filter(paid_at__date__gte=from_date)
+		refunds_qs = refunds_qs.filter(refunded_at__date__gte=from_date)
 		expenses_qs = expenses_qs.filter(expense_date__gte=from_date)
 		appointments_qs = appointments_qs.filter(created_at__date__gte=from_date)
 		products_qs = products_qs.filter(created_at__date__gte=from_date)
@@ -2119,32 +2854,42 @@ def export_reports_pdf(request):
 		invoices_qs = invoices_qs.filter(created_at__date__lte=to_date)
 		clients_qs = clients_qs.filter(created_at__date__lte=to_date)
 		payments_qs = payments_qs.filter(paid_at__date__lte=to_date)
+		refunds_qs = refunds_qs.filter(refunded_at__date__lte=to_date)
 		expenses_qs = expenses_qs.filter(expense_date__lte=to_date)
 		appointments_qs = appointments_qs.filter(created_at__date__lte=to_date)
 		products_qs = products_qs.filter(created_at__date__lte=to_date)
 
 	show_income = _can_view_income(request.user)
-	revenue_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0 if show_income else None
+	payments_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0
+	refunds_total = refunds_qs.aggregate(total=Sum("amount")).get("total") or 0
+	revenue_total = (payments_total - refunds_total) if show_income else None
 	expenses_total = expenses_qs.aggregate(total=Sum("amount")).get("total") or 0
+	invoiced_total = sum((inv.total() for inv in invoices_qs), Decimal("0.00")) if show_income else None
+	outstanding_total = sum((inv.outstanding_balance() for inv in invoices_qs), Decimal("0.00")) if show_income else None
 
 	rows = [
 		["Clients Total", str(clients_qs.count())],
 		["Clients Active", str(clients_qs.filter(status=Client.Status.ACTIVE).count())],
 		["Invoices Total", str(invoices_qs.count())],
 		["Invoices Paid", str(invoices_qs.filter(status=Invoice.Status.PAID).count())],
-		["Expenses", str(expenses_total)],
+		["Expenses", _money(expenses_total)],
 		["Appointments Upcoming", str(appointments_qs.filter(scheduled_for__gte=now).count())],
 		["Products Total", str(products_qs.count())],
 		["Products Low Stock", str(products_qs.filter(stock_quantity__lte=F("low_stock_threshold")).count())],
 	]
 	if show_income:
-		rows.insert(4, ["Revenue (Payments)", str(revenue_total)])
-		rows.insert(6, ["Net Profit", str(revenue_total - expenses_total)])
+		rows.insert(4, ["Total Invoiced", _money(invoiced_total)])
+		rows.insert(5, ["Revenue (Net)", _money(revenue_total)])
+		rows.insert(6, ["Refunds", _money(refunds_total)])
+		rows.insert(8, ["Outstanding Balances", _money(outstanding_total)])
+		rows.insert(9, ["Net Profit", _money(revenue_total - expenses_total)])
+	extra_inline = _get_str(request, "inline")
 	return _pdf_response(
 		title="Reports Summary",
 		header=["Metric", "Value"],
 		rows=rows,
 		filename="reports.pdf",
+		inline=extra_inline in {"1", "true", "yes", "on"},
 	)
 
 

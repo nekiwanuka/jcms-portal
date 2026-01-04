@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load formatting %}
 
 {% block title %}Invoice {{ invoice.number }} | Jambas Imaging{% endblock %}
 
@@ -6,10 +7,11 @@
   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
     <div>
       <h1 class="h4 mb-1">Invoice {{ invoice.number }}</h1>
-      <div class="text-muted">Client: {{ invoice.client }}</div>
+      <div class="text-muted">Client: <a class="text-decoration-none" href="{% url 'client_history' invoice.client.id %}">{{ invoice.client }}</a></div>
     </div>
     <div class="d-flex gap-2">
       <a href="{% url 'invoice_pdf' invoice.id %}" class="btn btn-outline-primary btn-sm">Download Invoice PDF</a>
+      <a href="{% url 'invoice_pdf' invoice.id %}?inline=1" class="btn btn-outline-secondary btn-sm js-doc-preview" data-title="Invoice PDF">Preview PDF</a>
       <form method="post" action="{% url 'send_invoice' invoice.id %}">
         {% csrf_token %}
         <button type="submit" class="btn btn-primary btn-sm">Send Invoice</button>
@@ -50,7 +52,7 @@
       <div class="card shadow-sm h-100">
         <div class="card-body">
           <div class="text-muted small">Total</div>
-          <div class="h5 mb-0">{{ invoice.currency }} {{ totals.total }}</div>
+          <div class="h5 mb-0">{{ invoice.currency }} {{ totals.total|money }}</div>
         </div>
       </div>
     </div>
@@ -58,7 +60,7 @@
       <div class="card shadow-sm h-100">
         <div class="card-body">
           <div class="text-muted small">Paid</div>
-          <div class="h5 mb-0">{{ invoice.currency }} {{ totals.paid }}</div>
+          <div class="h5 mb-0">{{ invoice.currency }} {{ totals.paid|money }}</div>
         </div>
       </div>
     </div>
@@ -66,7 +68,7 @@
       <div class="card shadow-sm h-100">
         <div class="card-body">
           <div class="text-muted small">Balance</div>
-          <div class="h5 mb-0">{{ invoice.currency }} {{ totals.balance }}</div>
+          <div class="h5 mb-0">{{ invoice.currency }} {{ totals.balance|money }}</div>
         </div>
       </div>
     </div>
@@ -128,9 +130,9 @@
         <div class="card-footer bg-white">
           <div class="d-flex justify-content-end">
             <div style="min-width: 280px;">
-              <div class="d-flex justify-content-between"><span class="text-muted">Subtotal</span><span>{{ invoice.currency }} {{ totals.subtotal }}</span></div>
-              <div class="d-flex justify-content-between"><span class="text-muted">VAT</span><span>{{ invoice.currency }} {{ totals.vat }}</span></div>
-              <div class="d-flex justify-content-between fw-semibold"><span>Total</span><span>{{ invoice.currency }} {{ totals.total }}</span></div>
+              <div class="d-flex justify-content-between"><span class="text-muted">Subtotal</span><span>{{ invoice.currency }} {{ totals.subtotal|money }}</span></div>
+              <div class="d-flex justify-content-between"><span class="text-muted">VAT</span><span>{{ invoice.currency }} {{ totals.vat|money }}</span></div>
+              <div class="d-flex justify-content-between fw-semibold"><span>Total</span><span>{{ invoice.currency }} {{ totals.total|money }}</span></div>
             </div>
           </div>
         </div>
@@ -164,6 +166,7 @@
                     <td>{{ d.version }}</td>
                     <td class="text-end">
                       <a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a>
+                      <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'download_document' d.id %}?inline=1" data-title="Preview"><i class="bi bi-eye"></i></a>
                     </td>
                   </tr>
                 {% empty %}
@@ -238,6 +241,9 @@
                   <th>Method</th>
                   <th class="text-end">Amount</th>
                   <th class="text-end">Receipt</th>
+                  {% if is_admin %}
+                    <th class="text-end">Actions</th>
+                  {% endif %}
                 </tr>
               </thead>
               <tbody>
@@ -245,34 +251,103 @@
                   <tr>
                     <td>{{ p.paid_at|date:"Y-m-d H:i" }}</td>
                     <td>{{ p.method_label }}</td>
-                    <td class="text-end">{{ invoice.currency }} {{ p.amount }}</td>
+                    <td class="text-end">{{ invoice.currency }} {{ p.amount|money }}</td>
                     <td class="text-end">
                       <a class="btn btn-outline-primary btn-sm" href="{% url 'payment_receipt_pdf' invoice.id p.id %}">PDF</a>
+                      <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'payment_receipt_pdf' invoice.id p.id %}?inline=1" data-title="Receipt PDF"><i class="bi bi-eye"></i></a>
                       {% if p.archived_receipt_doc %}
                         <a class="btn btn-outline-secondary btn-sm" href="{% url 'download_document' p.archived_receipt_doc.id %}" title="Download archived receipt"><i class="bi bi-archive"></i></a>
+                        <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'download_document' p.archived_receipt_doc.id %}?inline=1" data-title="Archived Receipt"><i class="bi bi-eye"></i></a>
                       {% endif %}
                       <form method="post" action="{% url 'send_payment_receipt' invoice.id p.id %}" class="d-inline">
                         {% csrf_token %}
                         <button class="btn btn-outline-success btn-sm" type="submit">Send</button>
                       </form>
                     </td>
+                    {% if is_admin %}
+                      <td class="text-end">
+                        {% if p.is_refund_window_open %}
+                          <a class="btn btn-outline-warning btn-sm" href="{% url 'refund_payment' invoice.id p.id %}">Refund</a>
+                        {% else %}
+                          <button class="btn btn-outline-secondary btn-sm" type="button" disabled title="Refunds are allowed within 21 days of payment date.">Refund</button>
+                        {% endif %}
+                        <form method="post" action="{% url 'delete_invoice_payment' invoice.id p.id %}" class="d-inline" onsubmit="return confirm('Delete this payment?');">
+                          {% csrf_token %}
+                          <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+                        </form>
+                      </td>
+                    {% endif %}
                   </tr>
                   {% if p.reference or p.notes %}
                     <tr class="table-light">
-                      <td colspan="4" class="small text-muted">
+                      <td colspan="{% if is_admin %}5{% else %}4{% endif %}" class="small text-muted">
                         {% if p.reference %}<div><span class="fw-semibold">Ref:</span> {{ p.reference }}</div>{% endif %}
                         {% if p.notes %}<div><span class="fw-semibold">Notes:</span> {{ p.notes }}</div>{% endif %}
                       </td>
                     </tr>
                   {% endif %}
                 {% empty %}
-                  <tr><td colspan="4" class="text-center text-muted py-4">No payments yet.</td></tr>
+                  <tr><td colspan="{% if is_admin %}5{% else %}4{% endif %}" class="text-center text-muted py-4">No payments yet.</td></tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
         </div>
       </div>
+
+      {% if refunds %}
+        <div class="card shadow-sm mt-3">
+          <div class="card-header bg-white">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="fw-semibold">Refunds</div>
+              <span class="text-muted small">Latest first</span>
+            </div>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th>Date</th>
+                    <th>Payment</th>
+                    <th class="text-end">Amount</th>
+                    <th>By</th>
+                    {% if is_admin %}
+                      <th class="text-end">Actions</th>
+                    {% endif %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for r in refunds %}
+                    <tr>
+                      <td>{{ r.refunded_at|date:"Y-m-d H:i" }}</td>
+                      <td>#{{ r.payment.id }}</td>
+                      <td class="text-end">{{ invoice.currency }} {{ r.amount|money }}</td>
+                      <td>{{ r.refunded_by|default:"-" }}</td>
+                      {% if is_admin %}
+                        <td class="text-end">
+                          <form method="post" action="{% url 'delete_payment_refund' invoice.id r.id %}" class="d-inline" onsubmit="return confirm('Delete this refund?');">
+                            {% csrf_token %}
+                            <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+                          </form>
+                        </td>
+                      {% endif %}
+                    </tr>
+                    {% if r.reference or r.notes %}
+                      <tr class="table-light">
+                        <td colspan="{% if is_admin %}5{% else %}4{% endif %}" class="small text-muted">
+                          {% if r.reference %}<div><span class="fw-semibold">Ref:</span> {{ r.reference }}</div>{% endif %}
+                          {% if r.notes %}<div><span class="fw-semibold">Notes:</span> {{ r.notes }}</div>{% endif %}
+                        </td>
+                      </tr>
+                    {% endif %}
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      {% endif %}
     </div>
   </div>
 {% endblock %}

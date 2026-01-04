@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% load formatting %}
+
+{% block title %}Adjust Stock | {{ product.name }}{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Adjust Stock</h1>
+      <div class="text-muted">{{ product.sku }} — {{ product.name }}</div>
+    </div>
+    <a href="{% url 'inventory' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-lg-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Current Quantity</div>
+          <div class="h4 mb-0">{{ product.stock_quantity|money }}</div>
+          <div class="text-muted small mt-2">Reorder Level: {{ product.low_stock_threshold|money }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-8">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <form method="post" class="row g-3" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+              <div class="col-12">
+                <div class="alert alert-danger mb-0">{{ form.non_field_errors }}</div>
+              </div>
+            {% endif %}
+
+            <div class="col-12 col-md-6">
+              <label class="form-label">{{ form.movement_type.label }}</label>
+              {{ form.movement_type }}
+              <div class="text-danger small">{{ form.movement_type.errors }}</div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label">{{ form.quantity.label }}</label>
+              {{ form.quantity }}
+              <div class="form-text">Enter a positive quantity to add or reduce stock.</div>
+              <div class="text-danger small">{{ form.quantity.errors }}</div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label">{{ form.reference.label }}</label>
+              {{ form.reference }}
+              <div class="text-danger small">{{ form.reference.errors }}</div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label">{{ form.occurred_at.label }}</label>
+              {{ form.occurred_at }}
+              <div class="text-danger small">{{ form.occurred_at.errors }}</div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">{{ form.notes.label }}</label>
+              {{ form.notes }}
+              <div class="text-danger small">{{ form.notes.errors }}</div>
+            </div>
+
+            <div class="col-12 d-flex gap-2">
+              <button class="btn btn-primary" type="submit">Save</button>
+              <a class="btn btn-outline-secondary" href="{% url 'inventory' %}">Cancel</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

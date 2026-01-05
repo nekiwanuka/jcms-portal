@@ -110,6 +110,7 @@
               <th class="d-none d-md-table-cell">Issued</th>
               <th class="d-none d-md-table-cell">Due</th>
               <th class="text-end">Created</th>
+              <th class="text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -131,10 +132,23 @@
                 <td class="d-none d-md-table-cell">{{ inv.issued_at|date:"Y-m-d"|default:"-" }}</td>
                 <td class="d-none d-md-table-cell">{{ inv.due_at|date:"Y-m-d"|default:"-" }}</td>
                 <td class="text-end">{{ inv.created_at|date:"Y-m-d" }}</td>
+                <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm" href="{% url 'invoice_detail' inv.id %}">View</a>
+                  {% if inv.status != 'paid' and inv.status != 'cancelled' %}
+                    <a class="btn btn-outline-secondary btn-sm" href="{% url 'edit_invoice' inv.id %}">Edit</a>
+                  {% endif %}
+                  {% if is_admin and inv.status != 'paid' and inv.status != 'cancelled' %}
+                    <form method="post" action="{% url 'cancel_invoice' inv.id %}" class="d-inline" onsubmit="return window.__cancelInvoiceWithReason(this);">
+                      {% csrf_token %}
+                      <input type="hidden" name="cancel_reason" value="" />
+                      <button type="submit" class="btn btn-outline-danger btn-sm">Cancel</button>
+                    </form>
+                  {% endif %}
+                </td>
               </tr>
             {% empty %}
               <tr>
-                <td colspan="6" class="text-center text-muted py-4">No invoices found.</td>
+                <td colspan="7" class="text-center text-muted py-4">No invoices found.</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -142,4 +156,22 @@
       </div>
     </div>
   </div>
+
+  <script>
+    window.__cancelInvoiceWithReason = function (formEl) {
+      try {
+        var reason = window.prompt('Cancellation reason (required):', '') || '';
+        reason = reason.trim();
+        if (!reason) {
+          alert('Cancellation reason is required.');
+          return false;
+        }
+        var input = formEl.querySelector('input[name="cancel_reason"]');
+        if (input) input.value = reason;
+        return window.confirm('Cancel this invoice?');
+      } catch (e) {
+        return window.confirm('Cancel this invoice?');
+      }
+    };
+  </script>
 {% endblock %}

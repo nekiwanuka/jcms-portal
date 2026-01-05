@@ -27,6 +27,14 @@
         {% csrf_token %}
         <button type="submit" class="btn btn-outline-success btn-sm"><i class="bi bi-envelope"></i> Send PDF</button>
       </form>
+
+    {% if is_admin and quotation.status != 'converted' and quotation.status != 'cancelled' and not quotation.invoice %}
+    <form method="post" action="{% url 'cancel_quotation' quotation.id %}" class="d-inline" onsubmit="return window.__cancelQuotationWithReason(this);">
+      {% csrf_token %}
+      <input type="hidden" name="cancel_reason" value="" />
+      <button type="submit" class="btn btn-outline-danger btn-sm">Cancel</button>
+    </form>
+    {% endif %}
     </div>
   </div>
 
@@ -41,9 +49,15 @@
               </div>
               <div class="small text-muted">Valid until: {{ quotation.valid_until|date:'Y-m-d'|default:'-' }}</div>
               <div class="small text-muted">Prepared by: {{ quotation.created_by|default:'-' }}</div>
+			  {% if quotation.status == 'cancelled' %}
+				{% if quotation.cancelled_at %}<div class="small text-muted">Cancelled at: {{ quotation.cancelled_at|date:"Y-m-d H:i" }}</div>{% endif %}
+				{% if quotation.cancel_reason %}<div class="small text-muted">Reason: {{ quotation.cancel_reason }}</div>{% endif %}
+			  {% endif %}
             </div>
             <div class="d-flex gap-2">
-              <a class="btn btn-outline-primary btn-sm" href="{% url 'edit_quotation' quotation.id %}"><i class="bi bi-pencil"></i> Edit</a>
+              {% if quotation.status != 'converted' and quotation.status != 'cancelled' %}
+				<a class="btn btn-outline-primary btn-sm" href="{% url 'edit_quotation' quotation.id %}"><i class="bi bi-pencil"></i> Edit</a>
+			  {% endif %}
               <a class="btn btn-outline-secondary btn-sm" href="{% url 'upload_document' %}?client={{ quotation.client.id }}&quotation={{ quotation.id }}"><i class="bi bi-paperclip"></i> Attach Documents</a>
             </div>
           </div>
@@ -84,18 +98,20 @@
           <hr />
 
           <div class="d-flex flex-wrap gap-2">
-            <form method="post" action="{% url 'set_quotation_status' quotation.id 'sent' %}" class="d-inline">
-              {% csrf_token %}
-              <button class="btn btn-outline-primary btn-sm" type="submit">Mark Sent</button>
-            </form>
-            <form method="post" action="{% url 'set_quotation_status' quotation.id 'accepted' %}" class="d-inline">
-              {% csrf_token %}
-              <button class="btn btn-outline-success btn-sm" type="submit">Mark Approved</button>
-            </form>
-            <form method="post" action="{% url 'set_quotation_status' quotation.id 'rejected' %}" class="d-inline">
-              {% csrf_token %}
-              <button class="btn btn-outline-danger btn-sm" type="submit">Mark Rejected</button>
-            </form>
+            {% if quotation.status != 'converted' and quotation.status != 'cancelled' %}
+				<form method="post" action="{% url 'set_quotation_status' quotation.id 'sent' %}" class="d-inline">
+				  {% csrf_token %}
+				  <button class="btn btn-outline-primary btn-sm" type="submit">Mark Sent</button>
+				</form>
+				<form method="post" action="{% url 'set_quotation_status' quotation.id 'accepted' %}" class="d-inline">
+				  {% csrf_token %}
+				  <button class="btn btn-outline-success btn-sm" type="submit">Mark Approved</button>
+				</form>
+				<form method="post" action="{% url 'set_quotation_status' quotation.id 'rejected' %}" class="d-inline">
+				  {% csrf_token %}
+				  <button class="btn btn-outline-danger btn-sm" type="submit">Mark Rejected</button>
+				</form>
+			{% endif %}
 
             {% if quotation.invoice %}
               <a class="btn btn-outline-success btn-sm ms-auto" href="{% url 'invoice_detail' quotation.invoice.id %}"><i class="bi bi-receipt"></i> Open Invoice</a>
@@ -155,7 +171,9 @@
     <div class="card-body">
       <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
         <h2 class="h6 mb-0">Quotation Items</h2>
-        <a href="{% url 'add_quotation_item' quotation.id %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Add Item</a>
+        {% if quotation.status != 'converted' and quotation.status != 'cancelled' %}
+			<a href="{% url 'add_quotation_item' quotation.id %}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Add Item</a>
+		{% endif %}
       </div>
 
       <div class="table-responsive">
@@ -179,11 +197,13 @@
                 <td class="text-end">{{ quotation.currency }} {{ it.unit_price|money }}</td>
                 <td class="text-end">{{ quotation.currency }} {{ it.total_price|money }}</td>
                 <td class="text-end">
-                  <a class="btn btn-outline-primary btn-sm" href="{% url 'edit_quotation_item' quotation.id it.id %}"><i class="bi bi-pencil"></i></a>
-                  <form method="post" action="{% url 'delete_quotation_item' quotation.id it.id %}" class="d-inline">
-                    {% csrf_token %}
-                    <button class="btn btn-outline-danger btn-sm" type="submit"><i class="bi bi-trash"></i></button>
-                  </form>
+				  {% if quotation.status != 'converted' and quotation.status != 'cancelled' %}
+					<a class="btn btn-outline-primary btn-sm" href="{% url 'edit_quotation_item' quotation.id it.id %}"><i class="bi bi-pencil"></i></a>
+					<form method="post" action="{% url 'delete_quotation_item' quotation.id it.id %}" class="d-inline">
+					  {% csrf_token %}
+					  <button class="btn btn-outline-danger btn-sm" type="submit"><i class="bi bi-trash"></i></button>
+					</form>
+				  {% endif %}
                 </td>
               </tr>
             {% empty %}
@@ -194,4 +214,22 @@
       </div>
     </div>
   </div>
+
+  <script>
+    window.__cancelQuotationWithReason = function (formEl) {
+      try {
+        var reason = window.prompt('Cancellation reason (required):', '') || '';
+        reason = reason.trim();
+        if (!reason) {
+          alert('Cancellation reason is required.');
+          return false;
+        }
+        var input = formEl.querySelector('input[name="cancel_reason"]');
+        if (input) input.value = reason;
+        return window.confirm('Cancel this quotation?');
+      } catch (e) {
+        return window.confirm('Cancel this quotation?');
+      }
+    };
+  </script>
 {% endblock %}

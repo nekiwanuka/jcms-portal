@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Service Category | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Edit Service Category</h1>
+      <div class="text-muted">Update category name and status.</div>
+    </div>
+    <a href="{% url 'service_categories' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="post" class="row g-3" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="col-12"><div class="alert alert-danger mb-0">{{ form.non_field_errors }}</div></div>
+        {% endif %}
+
+        <div class="col-12">
+          <label class="form-label">{{ form.name.label }}</label>
+          {{ form.name }}
+          <div class="text-danger small">{{ form.name.errors }}</div>
+        </div>
+
+        <div class="col-12">
+          <div class="form-check">
+            {{ form.is_active }}
+            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">Active</label>
+          </div>
+          <div class="text-danger small">{{ form.is_active.errors }}</div>
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+          <a href="{% url 'service_categories' %}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

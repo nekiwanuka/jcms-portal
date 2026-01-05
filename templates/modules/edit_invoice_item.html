@@ -27,6 +27,11 @@
           <div class="text-danger small">{{ form.product.errors }}</div>
         </div>
         <div class="col-12 col-md-6">
+          <label class="form-label">{{ form.service.label }}</label>
+          {{ form.service }}
+          <div class="text-danger small">{{ form.service.errors }}</div>
+        </div>
+        <div class="col-12">
           <label class="form-label">{{ form.description.label }}</label>
           {{ form.description }}
           <div class="text-danger small">{{ form.description.errors }}</div>

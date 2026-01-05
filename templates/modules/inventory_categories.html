@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+
+{% block title %}Inventory Categories | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Inventory Categories</h1>
+      <div class="text-muted">Used to group products for reporting and filtering.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'inventory' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+      <a href="{% url 'add_inventory_category' %}" class="btn btn-primary btn-sm">+ Add Category</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in categories %}
+              <tr>
+                <td class="fw-semibold">{{ c.name }}</td>
+                <td><span class="badge text-bg-secondary">{{ c.get_category_type_display }}</span></td>
+                <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm" href="{% url 'edit_inventory_category' c.id %}">Edit</a>
+                  {% if is_admin %}
+                    <form method="post" action="{% url 'delete_inventory_category' c.id %}" class="d-inline" onsubmit="return confirm('Delete this category?');">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="text-center text-muted py-4">No categories yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

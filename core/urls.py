@@ -9,12 +9,16 @@ urlpatterns = [
     # Frontend module pages (template-rendered, login-protected)
     path("clients/", views.clients_view, name="clients"),
     path("clients/add/", views.add_client, name="add_client"),
+	path("clients/<int:client_id>/edit/", views.edit_client, name="edit_client"),
+	path("clients/<int:client_id>/delete/", views.delete_client, name="delete_client"),
 	path("clients/<int:client_id>/", views.client_history, name="client_history"),
     path("clients/export/csv/", views.export_clients_csv, name="export_clients_csv"),
     path("clients/export/pdf/", views.export_clients_pdf, name="export_clients_pdf"),
     path("invoices/", views.invoices_view, name="invoices"),
     path("invoices/add/", views.add_invoice, name="add_invoice"),
     path("invoices/<int:invoice_id>/", views.invoice_detail, name="invoice_detail"),
+    path("invoices/<int:invoice_id>/edit/", views.edit_invoice, name="edit_invoice"),
+    path("invoices/<int:invoice_id>/cancel/", views.cancel_invoice, name="cancel_invoice"),
     path("invoices/<int:invoice_id>/sign/", views.sign_invoice, name="sign_invoice"),
     path("invoices/<int:invoice_id>/send/", views.send_invoice, name="send_invoice"),
     path("invoices/<int:invoice_id>/pdf/", views.invoice_pdf, name="invoice_pdf"),
@@ -52,6 +56,7 @@ urlpatterns = [
 
 	# Receipts (payments register)
 	path("receipts/", views.receipts_view, name="receipts"),
+    path("receipts/<int:payment_id>/reverse/", views.reverse_receipt, name="reverse_receipt"),
 
     # Quotations (procurement workflow)
     path("quotations/", views.quotations_view, name="quotations"),
@@ -73,11 +78,24 @@ urlpatterns = [
         name="delete_quotation_item",
     ),
     path("quotations/<int:quotation_id>/status/<str:status>/", views.set_quotation_status, name="set_quotation_status"),
+    path("quotations/<int:quotation_id>/cancel/", views.cancel_quotation, name="cancel_quotation"),
     path("quotations/<int:quotation_id>/convert/", views.convert_quotation_to_invoice, name="convert_quotation_to_invoice"),
     path("inventory/", views.inventory_view, name="inventory"),
     path("inventory/add/", views.add_inventory, name="add_inventory"),
 	path("inventory/<int:product_id>/edit/", views.edit_inventory, name="edit_inventory"),
 	path("inventory/<int:product_id>/delete/", views.delete_inventory, name="delete_inventory"),
+    path("inventory/categories/", views.inventory_categories_view, name="inventory_categories"),
+    path("inventory/categories/add/", views.add_inventory_category, name="add_inventory_category"),
+    path(
+        "inventory/categories/<int:category_id>/edit/",
+        views.edit_inventory_category,
+        name="edit_inventory_category",
+    ),
+    path(
+        "inventory/categories/<int:category_id>/delete/",
+        views.delete_inventory_category,
+        name="delete_inventory_category",
+    ),
 	path("inventory/stock-movements/", views.stock_movements_view, name="stock_movements"),
 	path("inventory/products/<int:product_id>/stock/", views.adjust_stock, name="adjust_stock"),
     path("inventory/export/csv/", views.export_inventory_csv, name="export_inventory_csv"),
@@ -92,6 +110,16 @@ urlpatterns = [
     path("inventory/supplier-prices/<int:price_id>/edit/", views.edit_supplier_price, name="edit_supplier_price"),
     path("inventory/supplier-prices/<int:price_id>/delete/", views.delete_supplier_price, name="delete_supplier_price"),
     path("inventory/products/<int:product_id>/prices/", views.product_price_compare, name="product_price_compare"),
+
+    # Services
+    path("services/", views.services_view, name="services"),
+    path("services/add/", views.add_service, name="add_service"),
+    path("services/<int:service_id>/edit/", views.edit_service, name="edit_service"),
+    path("services/<int:service_id>/delete/", views.delete_service, name="delete_service"),
+    path("services/categories/", views.service_categories_view, name="service_categories"),
+    path("services/categories/add/", views.add_service_category, name="add_service_category"),
+    path("services/categories/<int:category_id>/edit/", views.edit_service_category, name="edit_service_category"),
+    path("services/categories/<int:category_id>/delete/", views.delete_service_category, name="delete_service_category"),
     path("expenses/", views.expenses_view, name="expenses"),
     path("expenses/add/", views.add_expense, name="add_expense"),
     path("expenses/export/csv/", views.export_expenses_csv, name="export_expenses_csv"),

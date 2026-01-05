@@ -43,6 +43,17 @@ class Invoice(models.Model):
 	due_at = models.DateField(null=True, blank=True)
 	notes = models.TextField(blank=True)
 
+	# Cancellation metadata (audit-friendly; avoids deleting history)
+	cancelled_at = models.DateTimeField(null=True, blank=True)
+	cancelled_by = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.SET_NULL,
+		null=True,
+		blank=True,
+		related_name="cancelled_invoices",
+	)
+	cancel_reason = models.TextField(blank=True, default="")
+
 	# Printing / approval fields
 	prepared_by_name = models.CharField(max_length=120, blank=True, default="")
 	signed_by_name = models.CharField(max_length=120, blank=True, default="")
@@ -112,7 +123,10 @@ class Invoice(models.Model):
 		Rules:
 		- If CANCELLED, do not auto-change.
 		- If outstanding balance is <= 0 -> PAID.
-		- If some amount is paid and invoice is DRAFT -> ISSUED.
+		- If some amount is paid -> ISSUED.
+		- If no amount is paid:
+		  - stay ISSUED if the invoice was already issued (sent/paid/refunded)
+		  - otherwise remain DRAFT.
 		"""
 		if self.status == self.Status.CANCELLED:
 			return
@@ -120,13 +134,21 @@ class Invoice(models.Model):
 		paid = self.amount_paid()
 		balance = self.outstanding_balance()
 
+		was_issued = bool(self.issued_at) or self.status in {self.Status.ISSUED, self.Status.PAID}
+		if not was_issued:
+			# If there is any payment/refund history, treat as issued (even if net is now 0).
+			try:
+				was_issued = self.payments.exists() or self.refunds.exists()
+			except Exception:
+				was_issued = was_issued
+
 		new_status = self.status
 		if balance <= Decimal("0.00"):
 			new_status = self.Status.PAID
 		elif paid > Decimal("0.00"):
 			new_status = self.Status.ISSUED
 		else:
-			new_status = self.Status.DRAFT
+			new_status = self.Status.ISSUED if was_issued else self.Status.DRAFT
 
 		update_fields: list[str] = []
 		if new_status != self.status:
@@ -144,6 +166,81 @@ class Invoice(models.Model):
 			self.deduct_stock_if_needed()
 		except Exception:
 			logger.exception("Failed to deduct stock for invoice %s", self.pk)
+		# If paid/unpaid state changed, keep profit record consistent.
+		try:
+			self._sync_profit_record()
+		except Exception:
+			logger.exception("Failed to sync profit record for invoice %s", self.pk)
+
+	def _compute_profit_breakdown(self) -> dict:
+		"""Compute sales/cost/profit totals for products and services on this invoice.
+
+		- Product cost is taken from InvoiceItem.unit_cost (snapshot); if 0, falls back to Product.cost_price.
+		- Service cost is taken from Service.service_charge at time of report.
+		"""
+		items = list(self.items.select_related("product", "service").all())
+		product_sales = Decimal("0.00")
+		product_cost = Decimal("0.00")
+		product_profit = Decimal("0.00")
+		service_sales = Decimal("0.00")
+		service_cost = Decimal("0.00")
+		service_profit = Decimal("0.00")
+
+		for it in items:
+			qty = (it.quantity or Decimal("0.00"))
+			if qty <= Decimal("0.00"):
+				continue
+			unit_price = (it.unit_price or Decimal("0.00"))
+			line_sales = (qty * unit_price).quantize(Decimal("0.01"))
+
+			if it.product_id:
+				unit_cost = (it.unit_cost or Decimal("0.00"))
+				if unit_cost == Decimal("0.00") and it.product is not None:
+					unit_cost = (getattr(it.product, "cost_price", None) or Decimal("0.00"))
+				line_cost = (qty * unit_cost).quantize(Decimal("0.01"))
+				product_sales += line_sales
+				product_cost += line_cost
+				product_profit += (line_sales - line_cost)
+				continue
+
+			if it.service_id and it.service is not None:
+				unit_charge = (getattr(it.service, "service_charge", None) or Decimal("0.00"))
+				line_cost = (qty * unit_charge).quantize(Decimal("0.01"))
+				service_sales += line_sales
+				service_cost += line_cost
+				service_profit += (line_sales - line_cost)
+				continue
+
+		return {
+			"product_sales_total": product_sales.quantize(Decimal("0.01")),
+			"product_cost_total": product_cost.quantize(Decimal("0.01")),
+			"product_profit_total": product_profit.quantize(Decimal("0.01")),
+			"service_sales_total": service_sales.quantize(Decimal("0.01")),
+			"service_cost_total": service_cost.quantize(Decimal("0.01")),
+			"service_profit_total": service_profit.quantize(Decimal("0.01")),
+		}
+
+	def _sync_profit_record(self, *, trigger_payment=None) -> None:
+		"""Create or remove ProfitRecord depending on whether invoice is PAID."""
+		if not self.pk:
+			return
+		from reports.models import ProfitRecord
+
+		if self.status == self.Status.PAID:
+			values = self._compute_profit_breakdown()
+			defaults = {
+				"branch_id": self.branch_id,
+				"currency": self.currency or "UGX",
+				"paid_at": timezone.now(),
+				**values,
+			}
+			if trigger_payment is not None:
+				defaults["trigger_payment"] = trigger_payment
+			ProfitRecord.objects.update_or_create(invoice_id=self.pk, defaults=defaults)
+			return
+
+		# If invoice is not PAID, remove any existing profit record.
+		ProfitRecord.objects.filter(invoice_id=self.pk).delete()
 
 	@property
 	def is_approved(self) -> bool:
@@ -211,8 +308,10 @@ class Invoice(models.Model):
 class InvoiceItem(models.Model):
 	invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name="items")
 	product = models.ForeignKey("inventory.Product", on_delete=models.PROTECT, null=True, blank=True)
+	service = models.ForeignKey("services.Service", on_delete=models.PROTECT, null=True, blank=True)
 	description = models.CharField(max_length=255)
 	quantity = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("1.00"))
+	unit_cost = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
 	unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
 	vat_exempt = models.BooleanField(default=False)
 
@@ -278,6 +377,11 @@ class Payment(models.Model):
 		if self.invoice_id:
 			try:
 				self.invoice.refresh_status_from_payments(save=True)
+				# Attach this payment to the profit record if the invoice became PAID.
+				try:
+					self.invoice._sync_profit_record(trigger_payment=self)
+				except Exception:
+					pass
 			except Exception:
 				# Avoid failing payment save if invoice status refresh hits a race.
 				pass
@@ -341,6 +445,22 @@ class PaymentRefund(models.Model):
 		# Ensure refund is consistent with linked objects.
 		if self.payment_id and self.invoice_id and self.payment.invoice_id != self.invoice_id:
 			raise ValidationError("Refund invoice must match payment invoice.")
+
+		# Prevent over-refunding the payment.
+		if self.payment_id:
+			already_refunded = (
+				PaymentRefund.objects.filter(payment_id=self.payment_id)
+				.exclude(pk=self.pk)
+				.aggregate(total=models.Sum("amount"))
+				.get("total")
+				or Decimal("0.00")
+			)
+			payment_amount = getattr(self.payment, "amount", None) or Decimal("0.00")
+			if already_refunded + (self.amount or Decimal("0.00")) > payment_amount:
+				refundable = payment_amount - already_refunded
+				if refundable < Decimal("0.00"):
+					refundable = Decimal("0.00")
+				raise ValidationError({"amount": f"Refund cannot exceed refundable amount ({refundable})."})
 
 	def save(self, *args, **kwargs):
 		# Keep invoice in sync even when refunds are edited/deleted.

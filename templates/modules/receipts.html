@@ -57,6 +57,13 @@
                     {% csrf_token %}
                     <button class="btn btn-outline-success btn-sm" type="submit">Send</button>
                   </form>
+          {% if is_admin and p.net_amount and p.net_amount > 0 %}
+          <form method="post" action="{% url 'reverse_receipt' p.id %}" class="d-inline" onsubmit="return window.__reverseReceiptWithReason(this);">
+            {% csrf_token %}
+            <input type="hidden" name="reverse_reason" value="" />
+            <button class="btn btn-outline-danger btn-sm" type="submit">Reverse</button>
+          </form>
+          {% endif %}
                 </td>
               </tr>
               {% if p.reference or p.notes %}
@@ -75,4 +82,22 @@
       </div>
     </div>
   </div>
+
+  <script>
+    window.__reverseReceiptWithReason = function (formEl) {
+      try {
+        var reason = window.prompt('Reversal reason (required):', '') || '';
+        reason = reason.trim();
+        if (!reason) {
+          alert('Reversal reason is required.');
+          return false;
+        }
+        var input = formEl.querySelector('input[name="reverse_reason"]');
+        if (input) input.value = reason;
+        return window.confirm('Reverse this receipt (creates a full refund)?');
+      } catch (e) {
+        return window.confirm('Reverse this receipt (creates a full refund)?');
+      }
+    };
+  </script>
 {% endblock %}

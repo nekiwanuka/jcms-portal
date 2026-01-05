@@ -12,6 +12,16 @@
     <div class="d-flex gap-2">
       <a href="{% url 'invoice_pdf' invoice.id %}" class="btn btn-outline-primary btn-sm">Download Invoice PDF</a>
       <a href="{% url 'invoice_pdf' invoice.id %}?inline=1" class="btn btn-outline-secondary btn-sm js-doc-preview" data-title="Invoice PDF">Preview PDF</a>
+      {% if invoice.status != 'paid' and invoice.status != 'cancelled' %}
+        <a href="{% url 'edit_invoice' invoice.id %}" class="btn btn-outline-secondary btn-sm">Edit</a>
+      {% endif %}
+      {% if is_admin and invoice.status != 'paid' and invoice.status != 'cancelled' %}
+        <form method="post" action="{% url 'cancel_invoice' invoice.id %}" onsubmit="return window.__cancelInvoiceWithReason(this);">
+          {% csrf_token %}
+          <input type="hidden" name="cancel_reason" value="" />
+          <button type="submit" class="btn btn-outline-danger btn-sm">Cancel</button>
+        </form>
+      {% endif %}
       <form method="post" action="{% url 'send_invoice' invoice.id %}">
         {% csrf_token %}
         <button type="submit" class="btn btn-primary btn-sm">Send Invoice</button>
@@ -77,10 +87,32 @@
         <div class="card-body">
           <div class="text-muted small">Status</div>
           <div class="h5 mb-0 text-capitalize">{{ invoice.status }}</div>
+          {% if invoice.status == 'cancelled' %}
+            {% if invoice.cancelled_at %}<div class="small text-muted mt-1">Cancelled at {{ invoice.cancelled_at|date:"Y-m-d H:i" }}</div>{% endif %}
+            {% if invoice.cancel_reason %}<div class="small text-muted">Reason: {{ invoice.cancel_reason }}</div>{% endif %}
+          {% endif %}
         </div>
       </div>
     </div>
   </div>
+
+  <script>
+    window.__cancelInvoiceWithReason = function (formEl) {
+      try {
+        var reason = window.prompt('Cancellation reason (required):', '') || '';
+        reason = reason.trim();
+        if (!reason) {
+          alert('Cancellation reason is required.');
+          return false;
+        }
+        var input = formEl.querySelector('input[name="cancel_reason"]');
+        if (input) input.value = reason;
+        return window.confirm('Cancel this invoice?');
+      } catch (e) {
+        return window.confirm('Cancel this invoice?');
+      }
+    };
+  </script>
 
   <div class="row g-3">
     <div class="col-12 col-lg-7">
@@ -108,6 +140,7 @@
                     <td>
                       <div class="fw-semibold">{{ it.description }}</div>
                       {% if it.product %}<div class="small text-muted">Product: {{ it.product }}</div>{% endif %}
+                      {% if it.service %}<div class="small text-muted">Service: {{ it.service }}</div>{% endif %}
                       <div class="d-flex gap-2 mt-1">
                         <a class="btn btn-outline-primary btn-sm" href="{% url 'edit_invoice_item' invoice.id it.id %}">Edit</a>
                         <form method="post" action="{% url 'delete_invoice_item' invoice.id it.id %}">

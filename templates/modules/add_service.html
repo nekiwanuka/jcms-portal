@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+
+{% block title %}Add Service | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Add Service</h1>
+      <div class="text-muted">Create a service that can be used on quotations and invoices.</div>
+    </div>
+    <a href="{% url 'services' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="post" class="row g-3" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="col-12"><div class="alert alert-danger mb-0">{{ form.non_field_errors }}</div></div>
+        {% endif %}
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">{{ form.branch.label }}</label>
+          {{ form.branch }}
+          <div class="text-danger small">{{ form.branch.errors }}</div>
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">{{ form.category.label }}</label>
+          {{ form.category }}
+          <div class="text-danger small">{{ form.category.errors }}</div>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">{{ form.name.label }}</label>
+          {{ form.name }}
+          <div class="text-danger small">{{ form.name.errors }}</div>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">{{ form.description.label }}</label>
+          {{ form.description }}
+          <div class="text-danger small">{{ form.description.errors }}</div>
+        </div>
+
+        <div class="col-12 col-md-4">
+          <label class="form-label">{{ form.unit_price.label }}</label>
+          {{ form.unit_price }}
+          <div class="text-danger small">{{ form.unit_price.errors }}</div>
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">{{ form.service_charge.label }}</label>
+          {{ form.service_charge }}
+          <div class="text-danger small">{{ form.service_charge.errors }}</div>
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">{{ form.profit_amount.label }}</label>
+          {{ form.profit_amount }}
+          <div class="form-text">{{ form.profit_amount.help_text }}</div>
+          <div class="text-danger small">{{ form.profit_amount.errors }}</div>
+        </div>
+
+        <div class="col-12">
+          <div class="card bg-light border-0">
+            <div class="card-body">
+              <div class="row g-3">
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Quantity</label>
+                  <input id="service_qty" class="form-control" type="number" step="0.01" min="0" value="1" />
+                  <div class="form-text">Used to calculate totals (does not change the saved service).</div>
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Total sales (Qty × Sales)</label>
+                  <input id="total_sales" class="form-control" type="text" value="" readonly />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Total cost (Qty × Charge)</label>
+                  <input id="total_cost" class="form-control" type="text" value="" readonly />
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label">Total profit (Qty × Profit)</label>
+                  <input id="total_profit" class="form-control" type="text" value="" readonly />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="form-check">
+            {{ form.is_active }}
+            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">Active</label>
+          </div>
+          <div class="text-danger small">{{ form.is_active.errors }}</div>
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <a href="{% url 'services' %}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const salesEl = document.getElementById("{{ form.unit_price.id_for_label }}");
+      const chargeEl = document.getElementById("{{ form.service_charge.id_for_label }}");
+      const profitEl = document.getElementById("{{ form.profit_amount.id_for_label }}");
+      const qtyEl = document.getElementById("service_qty");
+      const totalSalesEl = document.getElementById("total_sales");
+      const totalCostEl = document.getElementById("total_cost");
+      const totalProfitEl = document.getElementById("total_profit");
+
+      function toNumber(val) {
+        const n = parseFloat((val || "").toString().replace(/,/g, ""));
+        return Number.isFinite(n) ? n : 0;
+      }
+
+      function fmt2(val) {
+        return val.toFixed(2);
+      }
+
+      function recalc() {
+        if (!profitEl) return;
+        const qty = toNumber(qtyEl && qtyEl.value);
+        const sales = toNumber(salesEl && salesEl.value);
+        const charge = toNumber(chargeEl && chargeEl.value);
+        const profit = sales - charge;
+        profitEl.value = fmt2(profit);
+
+        if (totalSalesEl) totalSalesEl.value = fmt2(qty * sales);
+        if (totalCostEl) totalCostEl.value = fmt2(qty * charge);
+        if (totalProfitEl) totalProfitEl.value = fmt2(qty * profit);
+      }
+
+      if (salesEl) salesEl.addEventListener("input", recalc);
+      if (chargeEl) chargeEl.addEventListener("input", recalc);
+      if (qtyEl) qtyEl.addEventListener("input", recalc);
+      recalc();
+    })();
+  </script>
+{% endblock %}

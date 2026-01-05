@@ -8,7 +8,7 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InvoiceItem
-        fields = ["id", "invoice", "product", "description", "quantity", "unit_price", "line_total"]
+        fields = ["id", "invoice", "product", "service", "description", "quantity", "unit_price", "line_total"]
 
     def get_line_total(self, obj):
         return obj.line_total()

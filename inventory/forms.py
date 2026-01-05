@@ -8,6 +8,26 @@ from django.forms import inlineformset_factory
 from .models import Product, ProductCategory, StockMovement, Supplier, SupplierProductPrice
 
 
+class ProductCategoryForm(forms.ModelForm):
+	class Meta:
+		model = ProductCategory
+		fields = ["name", "category_type"]
+
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		# Default new categories to OTHER unless user chooses.
+		if not self.instance.pk and "category_type" in self.fields:
+			self.fields["category_type"].initial = ProductCategory.CategoryType.OTHER
+		for field in self.fields.values():
+			widget = field.widget
+			if widget.__class__.__name__ in {"CheckboxInput"}:
+				widget.attrs.setdefault("class", "form-check-input")
+			elif widget.__class__.__name__ in {"Select", "SelectMultiple"}:
+				widget.attrs.setdefault("class", "form-select")
+			else:
+				widget.attrs.setdefault("class", "form-control")
+
+
 class ProductForm(forms.ModelForm):
 	"""Product create/edit form.
 
@@ -39,7 +59,7 @@ class ProductForm(forms.ModelForm):
 		if "category_name" in self.fields:
 			self.fields["category_name"].widget.attrs.setdefault("placeholder", "e.g. IT PRODUCTS, MACHINERY, or a custom category")
 		# Helpful numeric input hints
-		for name in ("unit_price", "stock_quantity", "low_stock_threshold"):
+		for name in ("unit_price", "cost_price", "stock_quantity", "low_stock_threshold"):
 			if name in self.fields:
 				self.fields[name].widget.attrs.setdefault("step", "0.01")
 		for field in self.fields.values():
@@ -55,6 +75,7 @@ class ProductForm(forms.ModelForm):
 		"""Basic inventory validation."""
 		cleaned = super().clean()
 		unit_price = cleaned.get("unit_price")
+		cost_price = cleaned.get("cost_price")
 		stock_quantity = cleaned.get("stock_quantity")
 		low_stock_threshold = cleaned.get("low_stock_threshold")
 		category = cleaned.get("category")
@@ -62,6 +83,8 @@ class ProductForm(forms.ModelForm):
 
 		if unit_price is not None and unit_price < 0:
 			self.add_error("unit_price", "Unit price cannot be negative.")
+		if cost_price is not None and cost_price < 0:
+			self.add_error("cost_price", "Cost price cannot be negative.")
 		if stock_quantity is not None and stock_quantity < 0:
 			self.add_error("stock_quantity", "Stock quantity cannot be negative.")
 		if low_stock_threshold is not None and low_stock_threshold < 0:

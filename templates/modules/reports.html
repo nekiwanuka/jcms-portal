@@ -97,6 +97,58 @@
       </div>
     </div>
 
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Product Cost (COGS)</div>
+          {% if show_income %}
+            <div class="h4 mb-0">{{ kpis.product_cost_total|money }}</div>
+          {% else %}
+            <div class="text-muted">Restricted</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Product Gross Profit</div>
+          {% if show_income %}
+            <div class="h4 mb-0">{{ kpis.product_profit_total|money }}</div>
+          {% else %}
+            <div class="text-muted">Restricted</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Service Charges (COGS)</div>
+          {% if show_income %}
+            <div class="h4 mb-0">{{ kpis.service_cost_total|money }}</div>
+          {% else %}
+            <div class="text-muted">Restricted</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Service Gross Profit</div>
+          {% if show_income %}
+            <div class="h4 mb-0">{{ kpis.service_profit_total|money }}</div>
+          {% else %}
+            <div class="text-muted">Restricted</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
     <div class="col-12 col-md-6">
       <div class="card shadow-sm h-100">
         <div class="card-body">

@@ -2,7 +2,11 @@
 
 Django-based business management system for Jambas Imaging (Uganda).
 
-System documentation: see [docs/SYSTEM.md](docs/SYSTEM.md).
+Documentation:
+
+- System overview: [docs/SYSTEM.md](docs/SYSTEM.md)
+- Technical team guide: [docs/TECHNICAL_GUIDE.md](docs/TECHNICAL_GUIDE.md)
+- End-user guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 
 ## Local Development (Windows)
 

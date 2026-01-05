@@ -116,10 +116,16 @@ class QuotationItemForm(forms.ModelForm):
 	def clean(self):
 		cleaned = super().clean()
 		product = cleaned.get("product")
+		service = cleaned.get("service")
 		item_name = (cleaned.get("item_name") or "").strip()
 		description = (cleaned.get("description") or "").strip()
 		unit_price = cleaned.get("unit_price")
 		prod_desc = (getattr(product, "description", "") or "").strip() if product else ""
+		svc_desc = (getattr(service, "description", "") or "").strip() if service else ""
+
+		if product and service:
+			self.add_error("service", "Please choose either a product or a service, not both.")
+			return cleaned
 
 		if product and not item_name:
 			cleaned["item_name"] = product.name
@@ -129,11 +135,19 @@ class QuotationItemForm(forms.ModelForm):
 			description = cleaned["description"]
 		if product and unit_price is None:
 			cleaned["unit_price"] = product.unit_price
+		if service and not item_name:
+			cleaned["item_name"] = service.name
+			item_name = cleaned["item_name"]
+		if service and not description:
+			cleaned["description"] = f"{service.name} — {svc_desc}" if svc_desc else service.name
+			description = cleaned["description"]
+		if service and unit_price is None:
+			cleaned["unit_price"] = service.unit_price
 		# If no product is selected, unit price must be provided.
-		if not product and cleaned.get("unit_price") is None:
+		if not product and not service and cleaned.get("unit_price") is None:
 			self.add_error("unit_price", "Please enter a unit price.")
 
-		if not (product or item_name or description):
+		if not (product or service or item_name or description):
 			self.add_error("item_name", "Select a product or enter item details.")
 		if not description:
 			self.add_error("description", "Please enter a description/reason for this line.")

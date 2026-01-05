@@ -30,6 +30,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "supplier",
             "unit",
             "unit_price",
+            "cost_price",
             "stock_quantity",
             "low_stock_threshold",
             "is_low_stock",

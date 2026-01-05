@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     'accounts.apps.AccountsConfig',
     'clients',
     'inventory',
+    'services.apps.ServicesConfig',
     'sales',
     'invoices',
     'appointments',

@@ -13,6 +13,7 @@
         <a href="{% url 'export_inventory_csv' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download CSV</a>
         <a href="{% url 'export_inventory_pdf' %}{{ qs }}" class="btn btn-outline-primary btn-sm">Download PDF</a>
         <a href="{% url 'export_inventory_pdf' %}{{ qs }}{% if qs %}&{% else %}?{% endif %}inline=1" class="btn btn-outline-secondary btn-sm js-doc-preview" data-title="Inventory PDF">Preview PDF</a>
+      <a href="{% url 'inventory_categories' %}" class="btn btn-outline-primary btn-sm">Categories</a>
       <a href="{% url 'stock_movements' %}" class="btn btn-outline-primary btn-sm">Stock Movements</a>
       <a href="{% url 'suppliers' %}" class="btn btn-outline-primary btn-sm">Suppliers</a>
       <a href="{% url 'add_inventory' %}" class="btn btn-primary btn-sm">+ Add Product</a>

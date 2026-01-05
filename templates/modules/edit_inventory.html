@@ -36,6 +36,26 @@
           </div>
         {% endif %}
 
+        <div class="card bg-light border-0 mt-3">
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-4">
+                <label class="form-label">Profit per unit</label>
+                <input id="profit_per_unit" class="form-control" type="text" value="" readonly />
+                <div class="form-text">Auto-calculated as Sales price − Cost price.</div>
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label">Total cost (Qty × Cost)</label>
+                <input id="total_cost" class="form-control" type="text" value="" readonly />
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label">Total profit (Qty × Profit)</label>
+                <input id="total_profit" class="form-control" type="text" value="" readonly />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="d-flex gap-2 mt-4">
           <button class="btn btn-success" type="submit">Save</button>
           <a href="{% url 'inventory' %}" class="btn btn-secondary">Cancel</a>
@@ -43,4 +63,39 @@
       </form>
     </div>
   </div>
+
+  <script>
+    (function () {
+      const qtyEl = document.getElementById("{{ form.stock_quantity.id_for_label }}");
+      const salesEl = document.getElementById("{{ form.unit_price.id_for_label }}");
+      const costEl = document.getElementById("{{ form.cost_price.id_for_label }}");
+      const ppuEl = document.getElementById("profit_per_unit");
+      const totalCostEl = document.getElementById("total_cost");
+      const totalProfitEl = document.getElementById("total_profit");
+
+      function toNumber(val) {
+        const n = parseFloat((val || "").toString().replace(/,/g, ""));
+        return Number.isFinite(n) ? n : 0;
+      }
+
+      function fmt2(val) {
+        return val.toFixed(2);
+      }
+
+      function recalc() {
+        const qty = toNumber(qtyEl && qtyEl.value);
+        const sales = toNumber(salesEl && salesEl.value);
+        const cost = toNumber(costEl && costEl.value);
+        const ppu = sales - cost;
+        if (ppuEl) ppuEl.value = fmt2(ppu);
+        if (totalCostEl) totalCostEl.value = fmt2(qty * cost);
+        if (totalProfitEl) totalProfitEl.value = fmt2(qty * ppu);
+      }
+
+      if (qtyEl) qtyEl.addEventListener("input", recalc);
+      if (salesEl) salesEl.addEventListener("input", recalc);
+      if (costEl) costEl.addEventListener("input", recalc);
+      recalc();
+    })();
+  </script>
 {% endblock %}

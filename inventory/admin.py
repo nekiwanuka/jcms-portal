@@ -19,7 +19,7 @@ class ProductCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-	list_display = ("sku", "name", "category", "stock_quantity", "low_stock_threshold", "is_active")
+	list_display = ("sku", "name", "category", "unit_price", "cost_price", "stock_quantity", "low_stock_threshold", "is_active")
 	list_filter = ("category", "is_active")
 	search_fields = ("sku", "name")
 

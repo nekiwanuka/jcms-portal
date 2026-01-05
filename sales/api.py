@@ -24,7 +24,7 @@ class QuotationViewSet(viewsets.ModelViewSet):
 
 
 class QuotationItemViewSet(viewsets.ModelViewSet):
-    queryset = QuotationItem.objects.select_related("quotation").all()
+    queryset = QuotationItem.objects.select_related("quotation", "product", "service").all()
     serializer_class = QuotationItemSerializer
 
     def get_permissions(self):

@@ -27,6 +27,11 @@
           <div class="text-danger small">{{ form.product.errors }}</div>
         </div>
         <div class="col-12 col-md-6">
+          <label class="form-label">{{ form.service.label }}</label>
+          {{ form.service }}
+          <div class="text-danger small">{{ form.service.errors }}</div>
+        </div>
+        <div class="col-12">
           <label class="form-label">{{ form.description.label }}</label>
           {{ form.description }}
           <div class="text-danger small">{{ form.description.errors }}</div>
@@ -67,6 +72,7 @@
   <script>
     (function () {
       const productEl = document.getElementById("{{ form.product.id_for_label }}");
+      const serviceEl = document.getElementById("{{ form.service.id_for_label }}");
       const qtyEl = document.getElementById("{{ form.quantity.id_for_label }}");
       const unitEl = document.getElementById("{{ form.unit_price.id_for_label }}");
       const descEl = document.getElementById("{{ form.description.id_for_label }}");
@@ -109,15 +115,44 @@
         }
       }
 
+      async function fillFromService(serviceId) {
+        if (!serviceId) return;
+        try {
+          const res = await fetch(`/api/services/${serviceId}/`, { headers: { "Accept": "application/json" } });
+          if (!res.ok) return;
+          const data = await res.json();
+          if (descEl && !String(descEl.value || "").trim()) {
+            const name = (data.name || "").toString().trim();
+            const sdesc = (data.description || "").toString().trim();
+            descEl.value = sdesc ? `${name} — ${sdesc}` : name;
+          }
+          if (unitEl && !String(unitEl.value || "").trim()) {
+            unitEl.value = (data.unit_price ?? "").toString();
+          }
+          recalc();
+        } catch (e) {
+          // ignore
+        }
+      }
+
       if (qtyEl) qtyEl.addEventListener("input", recalc);
       if (unitEl) unitEl.addEventListener("input", recalc);
       if (productEl) {
         productEl.addEventListener("change", function () {
           const val = (productEl.value || "").toString();
+          if (val && serviceEl) serviceEl.value = "";
           fillFromProduct(val);
         });
         // If a product is pre-selected (edit flows), hydrate once.
         if (String(productEl.value || "").trim()) fillFromProduct(productEl.value);
+      }
+      if (serviceEl) {
+        serviceEl.addEventListener("change", function () {
+          const val = (serviceEl.value || "").toString();
+          if (val && productEl) productEl.value = "";
+          fillFromService(val);
+        });
+        if (String(serviceEl.value || "").trim()) fillFromService(serviceEl.value);
       }
       recalc();
     })();

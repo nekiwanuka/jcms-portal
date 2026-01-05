@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% load formatting %}
+
+{% block title %}Services | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Services</h1>
+      <div class="text-muted">Service catalog used in quotations and invoices.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a href="{% url 'service_categories' %}" class="btn btn-outline-primary btn-sm">Categories</a>
+      <a href="{% url 'add_service' %}" class="btn btn-primary btn-sm">+ Add Service</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-12 col-md-4">
+          <label class="form-label small text-muted mb-1">Search</label>
+          <input name="q" value="{{ filters.q }}" class="form-control form-control-sm" placeholder="Service name" />
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label small text-muted mb-1">Branch</label>
+          <select name="branch" class="form-select form-select-sm">
+            <option value="">All branches</option>
+            {% for b in branches %}
+              <option value="{{ b.id }}" {% if filters.branch == b.id|stringformat:"s" %}selected{% endif %}>{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label small text-muted mb-1">Category</label>
+          <select name="category" class="form-select form-select-sm">
+            <option value="">All</option>
+            {% for c in categories %}
+              <option value="{{ c.id }}" {% if filters.category == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-6 col-md-1">
+          <label class="form-label small text-muted mb-1">Active</label>
+          <select name="is_active" class="form-select form-select-sm">
+            <option value="">All</option>
+            <option value="1" {% if filters.is_active == "1" %}selected{% endif %}>Active</option>
+            <option value="0" {% if filters.is_active == "0" %}selected{% endif %}>Inactive</option>
+          </select>
+        </div>
+        <div class="col-6 col-md-1 d-flex gap-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+          <a href="{% url 'services' %}" class="btn btn-outline-secondary btn-sm w-100">Reset</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Total Services</div>
+          <div class="h4 mb-0">{{ services_total }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Active Services</div>
+          <div class="h4 mb-0">{{ services_active }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="fw-semibold">Services</div>
+        <span class="text-muted small">Showing latest 100</span>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Service</th>
+              <th class="d-none d-md-table-cell">Category</th>
+              <th class="d-none d-lg-table-cell">Branch</th>
+              <th class="text-end">Sales</th>
+              <th class="text-end d-none d-md-table-cell">Charge</th>
+              <th class="text-end d-none d-md-table-cell">Profit</th>
+              <th>Status</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in services %}
+              <tr>
+                <td>
+                  <div class="fw-semibold">{{ s.name }}</div>
+                  {% if s.description %}<div class="small text-muted">{{ s.description|truncatechars:60 }}</div>{% endif %}
+                </td>
+                <td class="d-none d-md-table-cell">{{ s.category|default:'-' }}</td>
+                <td class="d-none d-lg-table-cell">{{ s.branch|default:'-' }}</td>
+                <td class="text-end">{{ s.unit_price|money }}</td>
+                <td class="text-end d-none d-md-table-cell">{{ s.service_charge|money }}</td>
+                <td class="text-end d-none d-md-table-cell">{{ s.profit_amount|money }}</td>
+                <td>
+                  {% if s.is_active %}
+                    <span class="badge text-bg-success">Active</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary">Inactive</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm" href="{% url 'edit_service' s.id %}">Edit</a>
+                  {% if is_admin %}
+                    <form method="post" action="{% url 'delete_service' s.id %}" class="d-inline" onsubmit="return confirm('Delete this service?');">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="8" class="text-center text-muted py-4">No services found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

@@ -416,6 +416,7 @@ def clients_view(request):
 		"clients_total": clients_qs.count(),
 		"clients_active": clients_qs.filter(status=Client.Status.ACTIVE).count(),
 		"clients_prospect": clients_qs.filter(status=Client.Status.PROSPECT).count(),
+		"is_admin": _is_admin(request.user),
 		"branches": Branch.objects.filter(is_active=True),
 		"client_type_choices": Client.ClientType.choices,
 		"status_choices": Client.Status.choices,
@@ -449,6 +450,45 @@ def add_client(request):
 		form = ClientForm()
 
 	return render(request, "modules/add_client.html", {"form": form})
+
+
+@login_required
+def edit_client(request, client_id: int):
+	from clients.forms import ClientForm
+	from clients.models import Client
+
+	client = get_object_or_404(Client, pk=client_id)
+	if request.method == "POST":
+		form = ClientForm(request.POST, instance=client)
+		if form.is_valid():
+			form.save()
+			messages.success(request, "Client updated.")
+			return redirect("client_history", client_id=client.id)
+	else:
+		form = ClientForm(instance=client)
+
+	return render(request, "modules/edit_client.html", {"form": form, "client": client, "is_admin": _is_admin(request.user)})
+
+
+@login_required
+def delete_client(request, client_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+	if request.method != "POST":
+		return redirect("client_history", client_id=client_id)
+
+	from django.db.models.deletion import ProtectedError
+	from clients.models import Client
+
+	client = get_object_or_404(Client, pk=client_id)
+	try:
+		client.delete()
+		messages.success(request, "Client deleted.")
+		return redirect("clients")
+	except ProtectedError:
+		messages.warning(request, "Client is in use and cannot be deleted.")
+		return redirect("client_history", client_id=client_id)
 
 
 @login_required
@@ -533,6 +573,7 @@ def client_history(request, client_id: int):
 		"invoices": invoices,
 		"payments": payments,
 		"documents": documents,
+		"is_admin": _is_admin(request.user),
 		"counts": {
 			"quotations": Quotation.objects.filter(client=client).count(),
 			"invoices": Invoice.objects.filter(client=client).count(),
@@ -558,6 +599,7 @@ def invoices_view(request):
 		"invoices_draft": invoices_qs.filter(status=Invoice.Status.DRAFT).count(),
 		"invoices_issued": invoices_qs.filter(status=Invoice.Status.ISSUED).count(),
 		"invoices_paid": invoices_qs.filter(status=Invoice.Status.PAID).count(),
+		"is_admin": _is_admin(request.user),
 		"branches": Branch.objects.filter(is_active=True),
 		"status_choices": Invoice.Status.choices,
 		"filters": {
@@ -570,6 +612,62 @@ def invoices_view(request):
 		"qs": _current_querystring(request),
 	}
 	return render(request, "modules/invoices.html", context)
+
+
+@login_required
+def edit_invoice(request, invoice_id: int):
+	from invoices.forms import InvoiceForm
+	from invoices.models import Invoice
+
+	invoice = get_object_or_404(Invoice, pk=invoice_id)
+	if invoice.status in {Invoice.Status.PAID, Invoice.Status.CANCELLED}:
+		messages.warning(request, "Paid/Cancelled invoices are read-only.")
+		return redirect("invoice_detail", invoice_id=invoice.id)
+
+	if request.method == "POST":
+		form = InvoiceForm(request.POST, instance=invoice)
+		if form.is_valid():
+			form.save()
+			messages.success(request, "Invoice updated.")
+			return redirect("invoice_detail", invoice_id=invoice.id)
+	else:
+		form = InvoiceForm(instance=invoice)
+
+	return render(request, "modules/edit_invoice.html", {"form": form, "invoice": invoice})
+
+
+@login_required
+def cancel_invoice(request, invoice_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+	if request.method != "POST":
+		return redirect("invoice_detail", invoice_id=invoice_id)
+
+	from invoices.models import Invoice
+
+	invoice = get_object_or_404(Invoice, pk=invoice_id)
+	if invoice.status == Invoice.Status.PAID:
+		messages.warning(request, "Paid invoices cannot be cancelled. Use refunds instead.")
+		return redirect("invoice_detail", invoice_id=invoice.id)
+
+	# Do not allow cancellation if any net payment remains.
+	if invoice.amount_paid() > Decimal("0.00"):
+		messages.warning(request, "This invoice has payments. Refund/clear payments first, then cancel.")
+		return redirect("invoice_detail", invoice_id=invoice.id)
+
+	reason = (request.POST.get("cancel_reason") or "").strip()
+	if invoice.status != Invoice.Status.DRAFT and not reason:
+		messages.error(request, "Please provide a cancellation reason.")
+		return redirect("invoice_detail", invoice_id=invoice.id)
+
+	invoice.status = Invoice.Status.CANCELLED
+	invoice.cancel_reason = reason
+	invoice.cancelled_at = timezone.now()
+	invoice.cancelled_by = request.user
+	invoice.save(update_fields=["status", "cancel_reason", "cancelled_at", "cancelled_by"])
+	messages.success(request, "Invoice cancelled.")
+	return redirect("invoice_detail", invoice_id=invoice.id)
 
 
 @login_required
@@ -601,7 +699,51 @@ def receipts_view(request):
 	for p in payments:
 		p.archived_receipt_doc = archived_by_payment_id.get(p.id)
 
-	return render(request, "modules/receipts.html", {"payments": payments})
+	return render(request, "modules/receipts.html", {"payments": payments, "is_admin": _is_admin(request.user)})
+
+
+@login_required
+def reverse_receipt(request, payment_id: int):
+	"""Reverse a receipt by creating a full refund for the remaining refundable amount."""
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+	if request.method != "POST":
+		return redirect("receipts")
+
+	from decimal import Decimal
+	from django.core.exceptions import ValidationError
+	from invoices.models import Payment, PaymentRefund
+
+	payment = get_object_or_404(Payment.objects.select_related("invoice", "invoice__client").prefetch_related("refunds"), pk=payment_id)
+	reason = (request.POST.get("reverse_reason") or "").strip()
+	if not reason:
+		messages.error(request, "Please provide a reversal reason.")
+		return redirect("receipts")
+
+	already_refunded = sum((r.amount for r in payment.refunds.all()), Decimal("0.00"))
+	refundable = (payment.amount or Decimal("0.00")) - already_refunded
+	if refundable <= Decimal("0.00"):
+		messages.info(request, "This receipt is already fully reversed/refunded.")
+		return redirect("receipts")
+
+	refund = PaymentRefund(
+		payment=payment,
+		invoice=payment.invoice,
+		amount=refundable,
+		refunded_by=request.user,
+		reference=f"Reversal of {payment.receipt_number or payment.id}",
+		notes=f"Receipt reversed: {reason}",
+	)
+	try:
+		refund.save()
+		messages.success(request, "Receipt reversed (full refund recorded).")
+	except ValidationError as e:
+		messages.error(request, str(e))
+	except Exception:
+		messages.error(request, "Failed to reverse receipt.")
+
+	return redirect("receipts")
 
 
 @login_required
@@ -687,6 +829,7 @@ def _quotation_badge_class(status: str) -> str:
 		Quotation.Status.REJECTED: "text-bg-danger",
 		Quotation.Status.CONVERTED: "text-bg-secondary",
 		Quotation.Status.EXPIRED: "text-bg-dark",
+		Quotation.Status.CANCELLED: "text-bg-danger",
 	}.get(status, "text-bg-secondary")
 
 
@@ -764,8 +907,8 @@ def edit_quotation(request, quotation_id: int):
 	from sales.models import Quotation
 
 	quote = get_object_or_404(Quotation.objects.select_related("client"), pk=quotation_id)
-	if quote.status in {Quotation.Status.CONVERTED}:
-		messages.warning(request, "Converted quotations are read-only.")
+	if quote.status in {Quotation.Status.CONVERTED, Quotation.Status.CANCELLED}:
+		messages.warning(request, "Converted/Cancelled quotations are read-only.")
 		return redirect("quotation_detail", quotation_id=quote.id)
 
 	if request.method == "POST":
@@ -803,6 +946,7 @@ def quotation_detail(request, quotation_id: int):
 			"quotation": quote,
 			"badge": _quotation_badge_class,
 			"documents": docs[:20],
+			"is_admin": _is_admin(request.user),
 		},
 	)
 
@@ -813,8 +957,8 @@ def add_quotation_item(request, quotation_id: int):
 	from sales.models import Quotation, QuotationItem
 
 	quote = get_object_or_404(Quotation.objects.select_related("client"), pk=quotation_id)
-	if quote.status in {Quotation.Status.CONVERTED}:
-		messages.warning(request, "Converted quotations are read-only.")
+	if quote.status in {Quotation.Status.CONVERTED, Quotation.Status.CANCELLED}:
+		messages.warning(request, "Converted/Cancelled quotations are read-only.")
 		return redirect("quotation_detail", quotation_id=quote.id)
 
 	if request.method == "POST":
@@ -838,8 +982,8 @@ def edit_quotation_item(request, quotation_id: int, item_id: int):
 
 	quote = get_object_or_404(Quotation, pk=quotation_id)
 	item = get_object_or_404(QuotationItem, pk=item_id, quotation=quote)
-	if quote.status in {Quotation.Status.CONVERTED}:
-		messages.warning(request, "Converted quotations are read-only.")
+	if quote.status in {Quotation.Status.CONVERTED, Quotation.Status.CANCELLED}:
+		messages.warning(request, "Converted/Cancelled quotations are read-only.")
 		return redirect("quotation_detail", quotation_id=quote.id)
 
 	if request.method == "POST":
@@ -860,8 +1004,8 @@ def delete_quotation_item(request, quotation_id: int, item_id: int):
 
 	quote = get_object_or_404(Quotation, pk=quotation_id)
 	item = get_object_or_404(QuotationItem, pk=item_id, quotation=quote)
-	if quote.status in {Quotation.Status.CONVERTED}:
-		messages.warning(request, "Converted quotations are read-only.")
+	if quote.status in {Quotation.Status.CONVERTED, Quotation.Status.CANCELLED}:
+		messages.warning(request, "Converted/Cancelled quotations are read-only.")
 		return redirect("quotation_detail", quotation_id=quote.id)
 
 	if request.method == "POST":
@@ -887,6 +1031,9 @@ def set_quotation_status(request, quotation_id: int, status: str):
 		return redirect("quotation_detail", quotation_id=quote.id)
 	if quote.status in {Quotation.Status.CONVERTED}:
 		messages.warning(request, "Converted quotations are read-only.")
+		return redirect("quotation_detail", quotation_id=quote.id)
+	if quote.status == Quotation.Status.CANCELLED:
+		messages.warning(request, "Cancelled quotations are read-only.")
 		return redirect("quotation_detail", quotation_id=quote.id)
 	if quote.status == Quotation.Status.EXPIRED:
 		messages.warning(request, "Expired quotations cannot be updated.")
@@ -926,6 +1073,39 @@ def set_quotation_status(request, quotation_id: int, status: str):
 			return redirect("quotation_detail", quotation_id=quote.id)
 
 	messages.success(request, "Quotation status updated.")
+	return redirect("quotation_detail", quotation_id=quote.id)
+
+
+@login_required
+def cancel_quotation(request, quotation_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+	if request.method != "POST":
+		return redirect("quotation_detail", quotation_id=quotation_id)
+
+	from sales.models import Quotation
+	from invoices.models import Invoice
+
+	quote = get_object_or_404(Quotation, pk=quotation_id)
+	if Invoice.objects.filter(quotation_id=quote.id).exists() or quote.status == Quotation.Status.CONVERTED:
+		messages.warning(request, "Converted quotations cannot be cancelled.")
+		return redirect("quotation_detail", quotation_id=quote.id)
+	if quote.status == Quotation.Status.CANCELLED:
+		messages.info(request, "Quotation is already cancelled.")
+		return redirect("quotation_detail", quotation_id=quote.id)
+
+	reason = (request.POST.get("cancel_reason") or "").strip()
+	if not reason:
+		messages.error(request, "Please provide a cancellation reason.")
+		return redirect("quotation_detail", quotation_id=quote.id)
+
+	quote.status = Quotation.Status.CANCELLED
+	quote.cancel_reason = reason
+	quote.cancelled_at = timezone.now()
+	quote.cancelled_by = request.user
+	quote.save(update_fields=["status", "cancel_reason", "cancelled_at", "cancelled_by"])
+	messages.success(request, "Quotation cancelled.")
 	return redirect("quotation_detail", quotation_id=quote.id)
 
 
@@ -1199,6 +1379,7 @@ def _convert_quotation_to_invoice_internal(*, quote, actor):
 		InvoiceItem.objects.create(
 			invoice=invoice,
 			product=it.product,
+			service=getattr(it, "service", None),
 			description=(it.item_name or it.description or "Item"),
 			quantity=it.quantity,
 			unit_price=it.unit_price,
@@ -1957,6 +2138,12 @@ def send_invoice(request, invoice_id: int):
 	msg.attach(filename=filename, content=pdf_bytes, mimetype="application/pdf")
 	try:
 		msg.send(fail_silently=False)
+		# Mark as issued when successfully sent.
+		if invoice.status not in {Invoice.Status.PAID, Invoice.Status.CANCELLED}:
+			invoice.status = Invoice.Status.ISSUED
+			if not invoice.issued_at:
+				invoice.issued_at = timezone.localdate()
+			invoice.save(update_fields=["status", "issued_at"])
 		Document.objects.create(
 			branch_id=getattr(invoice, "branch_id", None),
 			client=invoice.client,
@@ -2368,6 +2555,239 @@ def product_price_compare(request, product_id: int):
 
 
 @login_required
+def services_view(request):
+	"""Services catalog (list + filters)."""
+	from core.models import Branch
+	from services.models import Service, ServiceCategory
+	from django.db.models import Q
+
+	q = _get_str(request, "q")
+	branch_id = _get_int(request, "branch")
+	category_id = _get_int(request, "category")
+	is_active = _get_str(request, "is_active")
+
+	qs = Service.objects.select_related("branch", "category").all().order_by("name")
+	if q:
+		qs = qs.filter(Q(name__icontains=q) | Q(description__icontains=q))
+	if branch_id is not None:
+		qs = qs.filter(branch_id=branch_id)
+	if category_id is not None:
+		qs = qs.filter(category_id=category_id)
+	if is_active in {"0", "1"}:
+		qs = qs.filter(is_active=(is_active == "1"))
+
+	context = {
+		"services": qs[:100],
+		"services_total": qs.count(),
+		"services_active": qs.filter(is_active=True).count(),
+		"is_admin": _is_admin(request.user),
+		"branches": Branch.objects.filter(is_active=True),
+		"categories": ServiceCategory.objects.all().order_by("name"),
+		"filters": {
+			"q": q,
+			"branch": _get_str(request, "branch"),
+			"category": _get_str(request, "category"),
+			"is_active": is_active,
+		},
+		"qs": _current_querystring(request),
+	}
+	return render(request, "modules/services.html", context)
+
+
+@login_required
+def add_service(request):
+	from services.forms import ServiceForm
+
+	if request.method == "POST":
+		form = ServiceForm(request.POST)
+		if form.is_valid():
+			form.save()
+			messages.success(request, "Service created.")
+			return redirect("services")
+	else:
+		form = ServiceForm()
+
+	return render(request, "modules/add_service.html", {"form": form})
+
+
+@login_required
+def edit_service(request, service_id: int):
+	from services.forms import ServiceForm
+	from services.models import Service
+
+	service = get_object_or_404(Service, pk=service_id)
+	if request.method == "POST":
+		form = ServiceForm(request.POST, instance=service)
+		if form.is_valid():
+			form.save()
+			messages.success(request, "Service updated.")
+			return redirect("services")
+	else:
+		form = ServiceForm(instance=service)
+
+	return render(request, "modules/edit_service.html", {"form": form, "service": service})
+
+
+@login_required
+def delete_service(request, service_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+	if request.method != "POST":
+		return redirect("services")
+
+	from django.db.models.deletion import ProtectedError
+	from services.models import Service
+
+	service = get_object_or_404(Service, pk=service_id)
+	try:
+		service.delete()
+		messages.success(request, "Service deleted.")
+	except ProtectedError:
+		Service.objects.filter(pk=service.pk).update(is_active=False)
+		messages.warning(request, "Service is in use and cannot be deleted; it was deactivated instead.")
+	return redirect("services")
+
+
+@login_required
+def service_categories_view(request):
+	from services.models import ServiceCategory
+
+	categories = ServiceCategory.objects.all().order_by("name")
+	return render(
+		request,
+		"modules/service_categories.html",
+		{
+			"categories": categories,
+			"is_admin": _is_admin(request.user),
+		},
+	)
+
+
+@login_required
+def add_service_category(request):
+	from services.forms import ServiceCategoryForm
+
+	if request.method == "POST":
+		form = ServiceCategoryForm(request.POST)
+		if form.is_valid():
+			form.save()
+			messages.success(request, "Category created.")
+			return redirect("service_categories")
+	else:
+		form = ServiceCategoryForm()
+
+	return render(request, "modules/add_service_category.html", {"form": form})
+
+
+@login_required
+def edit_service_category(request, category_id: int):
+	from services.forms import ServiceCategoryForm
+	from services.models import ServiceCategory
+
+	category = get_object_or_404(ServiceCategory, pk=category_id)
+	if request.method == "POST":
+		form = ServiceCategoryForm(request.POST, instance=category)
+		if form.is_valid():
+			form.save()
+			messages.success(request, "Category updated.")
+			return redirect("service_categories")
+	else:
+		form = ServiceCategoryForm(instance=category)
+
+	return render(request, "modules/edit_service_category.html", {"form": form, "category": category})
+
+
+@login_required
+def delete_service_category(request, category_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+	if request.method != "POST":
+		return redirect("service_categories")
+
+	from django.db.models.deletion import ProtectedError
+	from services.models import ServiceCategory
+
+	category = get_object_or_404(ServiceCategory, pk=category_id)
+	try:
+		category.delete()
+		messages.success(request, "Category deleted.")
+	except ProtectedError:
+		messages.warning(request, "Category is in use and cannot be deleted.")
+	return redirect("service_categories")
+
+
+@login_required
+def inventory_categories_view(request):
+	from inventory.models import ProductCategory
+
+	categories = ProductCategory.objects.all().order_by("name")
+	return render(
+		request,
+		"modules/inventory_categories.html",
+		{
+			"categories": categories,
+			"is_admin": _is_admin(request.user),
+		},
+	)
+
+
+@login_required
+def add_inventory_category(request):
+	from inventory.forms import ProductCategoryForm
+
+	if request.method == "POST":
+		form = ProductCategoryForm(request.POST)
+		if form.is_valid():
+			form.save()
+			messages.success(request, "Category created.")
+			return redirect("inventory_categories")
+	else:
+		form = ProductCategoryForm()
+
+	return render(request, "modules/add_inventory_category.html", {"form": form})
+
+
+@login_required
+def edit_inventory_category(request, category_id: int):
+	from inventory.forms import ProductCategoryForm
+	from inventory.models import ProductCategory
+
+	category = get_object_or_404(ProductCategory, pk=category_id)
+	if request.method == "POST":
+		form = ProductCategoryForm(request.POST, instance=category)
+		if form.is_valid():
+			form.save()
+			messages.success(request, "Category updated.")
+			return redirect("inventory_categories")
+	else:
+		form = ProductCategoryForm(instance=category)
+
+	return render(request, "modules/edit_inventory_category.html", {"form": form, "category": category})
+
+
+@login_required
+def delete_inventory_category(request, category_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+	if request.method != "POST":
+		return redirect("inventory_categories")
+
+	from django.db.models.deletion import ProtectedError
+	from inventory.models import ProductCategory
+
+	category = get_object_or_404(ProductCategory, pk=category_id)
+	try:
+		category.delete()
+		messages.success(request, "Category deleted.")
+	except ProtectedError:
+		messages.warning(request, "Category is in use and cannot be deleted.")
+	return redirect("inventory_categories")
+
+
+@login_required
 def add_inventory(request):
 	"""Create a product (inventory item) via a server-rendered ModelForm."""
 	from inventory.forms import ProductForm
@@ -2640,6 +3060,9 @@ def export_appointments_pdf(request):
 @login_required
 def reports_view(request):
 	"""Reports frontend page (UI only)."""
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
 	from appointments.models import Appointment
 	from clients.models import Client
 	from core.models import Branch
@@ -2648,6 +3071,7 @@ def reports_view(request):
 	from invoices.models import Invoice
 	from invoices.models import Payment, PaymentRefund
 	from expenses.models import Expense
+	from reports.models import ProfitRecord
 
 	now = timezone.now()
 
@@ -2696,10 +3120,39 @@ def reports_view(request):
 	payments_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0
 	refunds_total = refunds_qs.aggregate(total=Sum("amount")).get("total") or 0
 	revenue_total = (payments_total - refunds_total) if show_income else None
+
+	# Profit is recorded independently when invoices become PAID.
+	service_cost_total = None
+	service_profit_total = None
+	product_cost_total = None
+	product_profit_total = None
+	if show_income:
+		records = ProfitRecord.objects.select_related("invoice").all()
+		if branch_id is not None:
+			records = records.filter(invoice__branch_id=branch_id)
+		if from_date:
+			records = records.filter(invoice__created_at__date__gte=from_date)
+		if to_date:
+			records = records.filter(invoice__created_at__date__lte=to_date)
+		aggs = records.aggregate(
+			service_cost=Sum("service_cost_total"),
+			service_profit=Sum("service_profit_total"),
+			product_cost=Sum("product_cost_total"),
+			product_profit=Sum("product_profit_total"),
+		)
+		service_cost_total = aggs.get("service_cost") or Decimal("0.00")
+		service_profit_total = aggs.get("service_profit") or Decimal("0.00")
+		product_cost_total = aggs.get("product_cost") or Decimal("0.00")
+		product_profit_total = aggs.get("product_profit") or Decimal("0.00")
 	expenses_total = expenses_qs.aggregate(total=Sum("amount")).get("total") or 0
 	invoiced_total = sum((inv.total() for inv in invoices_qs), Decimal("0.00")) if show_income else None
 	outstanding_total = sum((inv.outstanding_balance() for inv in invoices_qs), Decimal("0.00")) if show_income else None
-	net_profit = (revenue_total - expenses_total) if show_income else None
+	net_profit = (
+		revenue_total
+		- expenses_total
+		- (service_cost_total or Decimal("0.00"))
+		- (product_cost_total or Decimal("0.00"))
+	) if show_income else None
 	appointments_upcoming = appointments_qs.filter(scheduled_for__gte=now).count()
 	products_total = products_qs.count()
 	products_low_stock = products_qs.filter(stock_quantity__lte=F("low_stock_threshold")).count()
@@ -2716,6 +3169,10 @@ def reports_view(request):
 			"outstanding_total": outstanding_total,
 			"expenses_total": expenses_total,
 			"net_profit": net_profit,
+			"service_cost_total": service_cost_total,
+			"service_profit_total": service_profit_total,
+			"product_cost_total": product_cost_total,
+			"product_profit_total": product_profit_total,
 			"products_total": products_total,
 			"products_low_stock": products_low_stock,
 			"appointments_upcoming": appointments_upcoming,
@@ -2735,6 +3192,9 @@ def reports_view(request):
 @login_required
 def export_reports_csv(request):
 	"""Download report KPI summary as CSV (respects report filters)."""
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
 	# Reuse reports_view calculations by duplicating the same filtered QS logic.
 	from appointments.models import Appointment
 	from clients.models import Client
@@ -2743,6 +3203,7 @@ def export_reports_csv(request):
 	from invoices.models import Invoice
 	from invoices.models import Payment, PaymentRefund
 	from expenses.models import Expense
+	from reports.models import ProfitRecord
 
 	now = timezone.now()
 	branch_id = _get_int(request, "branch")
@@ -2793,6 +3254,28 @@ def export_reports_csv(request):
 	payments_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0
 	refunds_total = refunds_qs.aggregate(total=Sum("amount")).get("total") or 0
 	revenue_total = (payments_total - refunds_total) if show_income else None
+	service_cost_total = None
+	service_profit_total = None
+	product_cost_total = None
+	product_profit_total = None
+	if show_income:
+		records = ProfitRecord.objects.select_related("invoice").all()
+		if branch_id is not None:
+			records = records.filter(invoice__branch_id=branch_id)
+		if from_date:
+			records = records.filter(invoice__created_at__date__gte=from_date)
+		if to_date:
+			records = records.filter(invoice__created_at__date__lte=to_date)
+		aggs = records.aggregate(
+			service_cost=Sum("service_cost_total"),
+			service_profit=Sum("service_profit_total"),
+			product_cost=Sum("product_cost_total"),
+			product_profit=Sum("product_profit_total"),
+		)
+		service_cost_total = aggs.get("service_cost") or Decimal("0.00")
+		service_profit_total = aggs.get("service_profit") or Decimal("0.00")
+		product_cost_total = aggs.get("product_cost") or Decimal("0.00")
+		product_profit_total = aggs.get("product_profit") or Decimal("0.00")
 	expenses_total = expenses_qs.aggregate(total=Sum("amount")).get("total") or 0
 	invoiced_total = sum((inv.total() for inv in invoices_qs), Decimal("0.00")) if show_income else None
 	outstanding_total = sum((inv.outstanding_balance() for inv in invoices_qs), Decimal("0.00")) if show_income else None
@@ -2800,10 +3283,14 @@ def export_reports_csv(request):
 		writer.writerow(["Total Invoiced", _money(invoiced_total)])
 		writer.writerow(["Revenue (Net)", _money(revenue_total)])
 		writer.writerow(["Refunds", _money(refunds_total)])
+		writer.writerow(["Product Cost (COGS)", _money(product_cost_total)])
+		writer.writerow(["Product Gross Profit", _money(product_profit_total)])
+		writer.writerow(["Service Charges (COGS)", _money(service_cost_total)])
+		writer.writerow(["Service Gross Profit", _money(service_profit_total)])
 	writer.writerow(["Expenses", _money(expenses_total)])
 	if show_income:
 		writer.writerow(["Outstanding Balances", _money(outstanding_total)])
-		writer.writerow(["Net Profit", _money(revenue_total - expenses_total)])
+		writer.writerow(["Net Profit", _money(revenue_total - expenses_total - service_cost_total - product_cost_total)])
 	writer.writerow(["Appointments Upcoming", appointments_qs.filter(scheduled_for__gte=now).count()])
 	writer.writerow(["Products Total", products_qs.count()])
 	writer.writerow(["Products Low Stock", products_qs.filter(stock_quantity__lte=F("low_stock_threshold")).count()])
@@ -2814,6 +3301,9 @@ def export_reports_csv(request):
 @xframe_options_sameorigin
 def export_reports_pdf(request):
 	"""Download report KPI summary as PDF (respects report filters)."""
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
 	from appointments.models import Appointment
 	from clients.models import Client
 	from django.db.models import Sum
@@ -2821,6 +3311,7 @@ def export_reports_pdf(request):
 	from invoices.models import Invoice
 	from invoices.models import Payment, PaymentRefund
 	from expenses.models import Expense
+	from reports.models import ProfitRecord
 
 	now = timezone.now()
 	branch_id = _get_int(request, "branch")
@@ -2863,6 +3354,28 @@ def export_reports_pdf(request):
 	payments_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0
 	refunds_total = refunds_qs.aggregate(total=Sum("amount")).get("total") or 0
 	revenue_total = (payments_total - refunds_total) if show_income else None
+	service_cost_total = None
+	service_profit_total = None
+	product_cost_total = None
+	product_profit_total = None
+	if show_income:
+		records = ProfitRecord.objects.select_related("invoice").all()
+		if branch_id is not None:
+			records = records.filter(invoice__branch_id=branch_id)
+		if from_date:
+			records = records.filter(invoice__created_at__date__gte=from_date)
+		if to_date:
+			records = records.filter(invoice__created_at__date__lte=to_date)
+		aggs = records.aggregate(
+			service_cost=Sum("service_cost_total"),
+			service_profit=Sum("service_profit_total"),
+			product_cost=Sum("product_cost_total"),
+			product_profit=Sum("product_profit_total"),
+		)
+		service_cost_total = aggs.get("service_cost") or Decimal("0.00")
+		service_profit_total = aggs.get("service_profit") or Decimal("0.00")
+		product_cost_total = aggs.get("product_cost") or Decimal("0.00")
+		product_profit_total = aggs.get("product_profit") or Decimal("0.00")
 	expenses_total = expenses_qs.aggregate(total=Sum("amount")).get("total") or 0
 	invoiced_total = sum((inv.total() for inv in invoices_qs), Decimal("0.00")) if show_income else None
 	outstanding_total = sum((inv.outstanding_balance() for inv in invoices_qs), Decimal("0.00")) if show_income else None
@@ -2878,11 +3391,25 @@ def export_reports_pdf(request):
 		["Products Low Stock", str(products_qs.filter(stock_quantity__lte=F("low_stock_threshold")).count())],
 	]
 	if show_income:
-		rows.insert(4, ["Total Invoiced", _money(invoiced_total)])
-		rows.insert(5, ["Revenue (Net)", _money(revenue_total)])
-		rows.insert(6, ["Refunds", _money(refunds_total)])
-		rows.insert(8, ["Outstanding Balances", _money(outstanding_total)])
-		rows.insert(9, ["Net Profit", _money(revenue_total - expenses_total)])
+		rows = [
+			["Clients Total", str(clients_qs.count())],
+			["Clients Active", str(clients_qs.filter(status=Client.Status.ACTIVE).count())],
+			["Invoices Total", str(invoices_qs.count())],
+			["Invoices Paid", str(invoices_qs.filter(status=Invoice.Status.PAID).count())],
+			["Total Invoiced", _money(invoiced_total)],
+			["Revenue (Net)", _money(revenue_total)],
+			["Refunds", _money(refunds_total)],
+			["Product Cost (COGS)", _money(product_cost_total)],
+			["Product Gross Profit", _money(product_profit_total)],
+			["Service Charges (COGS)", _money(service_cost_total)],
+			["Service Gross Profit", _money(service_profit_total)],
+			["Expenses", _money(expenses_total)],
+			["Outstanding Balances", _money(outstanding_total)],
+			["Net Profit", _money(revenue_total - expenses_total - service_cost_total - product_cost_total)],
+			["Appointments Upcoming", str(appointments_qs.filter(scheduled_for__gte=now).count())],
+			["Products Total", str(products_qs.count())],
+			["Products Low Stock", str(products_qs.filter(stock_quantity__lte=F("low_stock_threshold")).count())],
+		]
 	extra_inline = _get_str(request, "inline")
 	return _pdf_response(
 		title="Reports Summary",

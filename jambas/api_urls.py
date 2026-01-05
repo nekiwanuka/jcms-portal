@@ -7,6 +7,7 @@ from documents.api import DocumentViewSet
 from inventory.api import ProductCategoryViewSet, ProductViewSet, StockMovementViewSet, SupplierViewSet
 from invoices.api import InvoiceItemViewSet, InvoiceViewSet, PaymentViewSet
 from sales.api import QuotationItemViewSet, QuotationViewSet
+from services.api import ServiceViewSet
 
 router = DefaultRouter()
 
@@ -17,6 +18,8 @@ router.register(r"suppliers", SupplierViewSet, basename="supplier")
 router.register(r"product-categories", ProductCategoryViewSet, basename="productcategory")
 router.register(r"products", ProductViewSet, basename="product")
 router.register(r"stock-movements", StockMovementViewSet, basename="stockmovement")
+
+router.register(r"services", ServiceViewSet, basename="service")
 
 router.register(r"quotations", QuotationViewSet, basename="quotation")
 router.register(r"quotation-items", QuotationItemViewSet, basename="quotationitem")

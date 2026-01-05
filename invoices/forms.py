@@ -68,6 +68,9 @@ class InvoiceItemForm(forms.ModelForm):
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
 		# If a product is selected, we can derive description + price.
+		if "unit_cost" in self.fields:
+			self.fields["unit_cost"].required = False
+			self.fields["unit_cost"].widget = forms.HiddenInput()
 		if "unit_price" in self.fields:
 			self.fields["unit_price"].required = False
 		if "description" in self.fields:
@@ -93,18 +96,40 @@ class InvoiceItemForm(forms.ModelForm):
 	def clean(self):
 		cleaned = super().clean()
 		product = cleaned.get("product")
+		service = cleaned.get("service")
 		description = (cleaned.get("description") or "").strip()
+		unit_cost = cleaned.get("unit_cost")
 		unit_price = cleaned.get("unit_price")
+		if product and service:
+			self.add_error("service", "Please choose either a product or a service, not both.")
+			return cleaned
+
+		# Preserve unit_cost on edit if it was not posted.
+		if unit_cost is None and getattr(self.instance, "pk", None):
+			cleaned["unit_cost"] = getattr(self.instance, "unit_cost", None)
+			unit_cost = cleaned.get("unit_cost")
+
 		if product:
 			if not description:
 				prod_desc = (getattr(product, "description", "") or "").strip()
 				cleaned["description"] = f"{product.name} — {prod_desc}" if prod_desc else product.name
+			# Snapshot cost for profit reporting.
+			cleaned["unit_cost"] = getattr(product, "cost_price", None)
 			if unit_price is None:
 				cleaned["unit_price"] = product.unit_price
+		elif service:
+			# Services use service_charge for cost; keep unit_cost at 0 for clarity.
+			cleaned["unit_cost"] = Decimal("0.00")
+		if service:
+			if not description:
+				s_desc = (getattr(service, "description", "") or "").strip()
+				cleaned["description"] = f"{service.name} — {s_desc}" if s_desc else service.name
+			if unit_price is None:
+				cleaned["unit_price"] = service.unit_price
 		if not (cleaned.get("description") or "").strip():
 			self.add_error("description", "Please enter a description for this line.")
 		# If product is not selected, unit price must be provided.
-		if not product and cleaned.get("unit_price") is None:
+		if not product and not service and cleaned.get("unit_price") is None:
 			self.add_error("unit_price", "Please enter a unit price.")
 		return cleaned
 

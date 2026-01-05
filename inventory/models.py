@@ -106,7 +106,10 @@ class Product(models.Model):
 	supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name="products")
 
 	unit = models.CharField(max_length=40, default="pcs")
+	# Sales price.
 	unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Price")
+	# Cost price (COGS per unit). Used for gross profit reporting.
+	cost_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Cost price")
 	vat_exempt = models.BooleanField(default=False)
 
 	stock_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"), verbose_name="Quantity")
@@ -124,6 +127,10 @@ class Product(models.Model):
 	@property
 	def reorder_level(self):
 		return self.low_stock_threshold
+
+	@property
+	def profit_per_unit(self) -> Decimal:
+		return ((self.unit_price or Decimal("0.00")) - (self.cost_price or Decimal("0.00"))).quantize(Decimal("0.01"))
 
 	def __str__(self):
 		return f"{self.sku} - {self.name}"

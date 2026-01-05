@@ -50,9 +50,9 @@
             {% endfor %}
           </select>
         </div>
-        <div class="col-12 col-md-1 d-flex gap-2">
-          <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
-          <a href="{% url 'clients' %}" class="btn btn-outline-secondary btn-sm w-100">Reset</a>
+        <div class="col-12 col-md-1 d-grid gap-1">
+          <button type="submit" class="btn btn-primary btn-sm py-1">Filter</button>
+          <a href="{% url 'clients' %}" class="btn btn-outline-secondary btn-sm py-1">Reset</a>
         </div>
       </form>
     </div>
@@ -103,6 +103,7 @@
               <th class="d-none d-md-table-cell">Phone</th>
               <th class="d-none d-lg-table-cell">Email</th>
               <th class="text-end">Created</th>
+              <th class="text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -125,10 +126,20 @@
                 <td class="d-none d-md-table-cell">{{ c.phone|default:"-" }}</td>
                 <td class="d-none d-lg-table-cell">{{ c.email|default:"-" }}</td>
                 <td class="text-end">{{ c.created_at|date:"Y-m-d" }}</td>
+                <td class="text-end">
+                  <a class="btn btn-outline-primary btn-sm" href="{% url 'client_history' c.id %}">View</a>
+                  <a class="btn btn-outline-secondary btn-sm" href="{% url 'edit_client' c.id %}">Edit</a>
+                  {% if is_admin %}
+                    <form method="post" action="{% url 'delete_client' c.id %}" class="d-inline" onsubmit="return confirm('Delete this client?');">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                    </form>
+                  {% endif %}
+                </td>
               </tr>
             {% empty %}
               <tr>
-                <td colspan="6" class="text-center text-muted py-4">No clients found.</td>
+                <td colspan="7" class="text-center text-muted py-4">No clients found.</td>
               </tr>
             {% endfor %}
           </tbody>

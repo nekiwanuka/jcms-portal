@@ -25,7 +25,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
 
 class InvoiceItemViewSet(viewsets.ModelViewSet):
-    queryset = InvoiceItem.objects.select_related("invoice").all()
+    queryset = InvoiceItem.objects.select_related("invoice", "product", "service").all()
     serializer_class = InvoiceItemSerializer
 
     def get_permissions(self):

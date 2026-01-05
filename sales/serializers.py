@@ -8,7 +8,7 @@ class QuotationItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = QuotationItem
-        fields = ["id", "quotation", "product", "description", "quantity", "unit_price", "line_total"]
+        fields = ["id", "quotation", "product", "service", "description", "quantity", "unit_price", "line_total"]
 
     def get_line_total(self, obj):
         return obj.line_total()

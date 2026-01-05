@@ -27,6 +27,7 @@ class Quotation(models.Model):
 		REJECTED = "rejected", "Rejected"
 		CONVERTED = "converted", "Converted"
 		EXPIRED = "expired", "Expired"
+		CANCELLED = "cancelled", "Cancelled"
 
 	branch = models.ForeignKey(
 		"core.Branch",
@@ -55,6 +56,17 @@ class Quotation(models.Model):
 
 	valid_until = models.DateField(null=True, blank=True)
 	notes = models.TextField(blank=True)
+
+	# Cancellation metadata (audit-friendly; avoids deleting history)
+	cancelled_at = models.DateTimeField(null=True, blank=True)
+	cancelled_by = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.SET_NULL,
+		null=True,
+		blank=True,
+		related_name="cancelled_quotations",
+	)
+	cancel_reason = models.TextField(blank=True, default="")
 
 	created_at = models.DateTimeField(auto_now_add=True)
 	updated_at = models.DateTimeField(auto_now=True)
@@ -153,12 +165,14 @@ class Quotation(models.Model):
 			self.Status.REJECTED: "text-bg-danger",
 			self.Status.CONVERTED: "text-bg-secondary",
 			self.Status.EXPIRED: "text-bg-dark",
+			self.Status.CANCELLED: "text-bg-danger",
 		}.get(self.status, "text-bg-secondary")
 
 
 class QuotationItem(models.Model):
 	quotation = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name="items")
 	product = models.ForeignKey("inventory.Product", on_delete=models.PROTECT, null=True, blank=True)
+	service = models.ForeignKey("services.Service", on_delete=models.PROTECT, null=True, blank=True)
 	item_name = models.CharField(max_length=255, blank=True, default="")
 	description = models.CharField(max_length=255, blank=True, default="")
 	quantity = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("1.00"))

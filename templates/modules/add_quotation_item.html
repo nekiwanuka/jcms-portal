@@ -27,6 +27,11 @@
           <div class="text-danger small">{{ form.product.errors }}</div>
         </div>
         <div class="col-12 col-md-6">
+          <label class="form-label">{{ form.service.label }}</label>
+          {{ form.service }}
+          <div class="text-danger small">{{ form.service.errors }}</div>
+        </div>
+        <div class="col-12 col-md-6">
           <label class="form-label">{{ form.item_name.label }}</label>
           {{ form.item_name }}
           <div class="text-danger small">{{ form.item_name.errors }}</div>
@@ -72,6 +77,7 @@
   <script>
     (function () {
       const productEl = document.getElementById("{{ form.product.id_for_label }}");
+      const serviceEl = document.getElementById("{{ form.service.id_for_label }}");
       const nameEl = document.getElementById("{{ form.item_name.id_for_label }}");
       const descEl = document.getElementById("{{ form.description.id_for_label }}");
       const qtyEl = document.getElementById("{{ form.quantity.id_for_label }}");
@@ -111,14 +117,40 @@
         }
       }
 
+      async function fillFromService(serviceId) {
+        if (!serviceId) return;
+        try {
+          const res = await fetch(`/api/services/${serviceId}/`, { headers: { "Accept": "application/json" } });
+          if (!res.ok) return;
+          const data = await res.json();
+          const name = (data.name || "").toString().trim();
+          const sdesc = (data.description || "").toString().trim();
+          if (nameEl && !String(nameEl.value || "").trim()) nameEl.value = name;
+          if (descEl && !String(descEl.value || "").trim()) descEl.value = sdesc ? `${name} — ${sdesc}` : name;
+          if (unitEl && !String(unitEl.value || "").trim()) unitEl.value = (data.unit_price ?? "").toString();
+          recalc();
+        } catch (e) {
+          // ignore
+        }
+      }
+
       if (qtyEl) qtyEl.addEventListener("input", recalc);
       if (unitEl) unitEl.addEventListener("input", recalc);
       if (productEl) {
         productEl.addEventListener("change", function () {
           const val = (productEl.value || "").toString();
+          if (val && serviceEl) serviceEl.value = "";
           fillFromProduct(val);
         });
         if (String(productEl.value || "").trim()) fillFromProduct(productEl.value);
+      }
+      if (serviceEl) {
+        serviceEl.addEventListener("change", function () {
+          const val = (serviceEl.value || "").toString();
+          if (val && productEl) productEl.value = "";
+          fillFromService(val);
+        });
+        if (String(serviceEl.value || "").trim()) fillFromService(serviceEl.value);
       }
       recalc();
     })();

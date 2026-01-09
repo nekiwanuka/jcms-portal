@@ -51,6 +51,7 @@
             <th>Type</th>
             <th>Client</th>
             <th>Version</th>
+            <th>Verification Status</th>
             <th>Uploaded</th>
             <th class="text-end">Actions</th>
           </tr>
@@ -58,25 +59,165 @@
         <tbody>
           {% for d in documents %}
             <tr>
-              <td class="fw-semibold">{{ d.title|default:'(Untitled)' }}</td>
+              <td class="fw-semibold">
+                {{ d.title|default:'(Untitled)' }}
+                {% if d.is_expired %}
+                  <span class="badge bg-danger ms-1">Expired</span>
+                {% elif d.expiry_date and d.days_until_expiry <= 30 %}
+                  <span class="badge bg-warning ms-1">Expires Soon</span>
+                {% endif %}
+                {% if d.is_signed %}
+                  <i class="bi bi-pen text-success ms-1" title="Digitally Signed"></i>
+                {% endif %}
+                {% if d.is_template %}
+                  <i class="bi bi-file-earmark-text text-info ms-1" title="Template"></i>
+                {% endif %}
+              </td>
               <td>{{ d.get_doc_type_display }}</td>
               <td>{{ d.client }}</td>
               <td>v{{ d.version }}</td>
+              <td>
+                <span class="badge bg-{% if d.verification_status == 'approved' %}success{% elif d.verification_status == 'rejected' %}danger{% elif d.verification_status == 'pending' %}warning{% elif d.verification_status == 'under_review' %}info{% else %}secondary{% endif %}">
+                  {{ d.get_verification_status_display }}
+                </span>
+              </td>
               <td>{{ d.uploaded_at|date:'Y-m-d H:i' }}</td>
               <td class="text-end">
-                <a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i> Download</a>
-                <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'download_document' d.id %}?inline=1" data-title="Preview"><i class="bi bi-eye"></i> Preview</a>
-                <form method="post" action="{% url 'send_document' d.id %}" class="d-inline">
-                  {% csrf_token %}
-                  <button class="btn btn-outline-success btn-sm" type="submit"><i class="bi bi-envelope"></i> Send</button>
-                </form>
+                <div class="btn-group" role="group">
+                  <a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a>
+                  <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'download_document' d.id %}?inline=1" title="Preview"><i class="bi bi-eye"></i></a>
+
+                  {% if d.verification_status == 'pending' and d.approval_workflow != 'none' %}
+                    <form method="post" action="{% url 'approve_document' d.id %}" class="d-inline">
+                      {% csrf_token %}
+                      <button class="btn btn-outline-success btn-sm" type="submit" title="Approve"><i class="bi bi-check-circle"></i></button>
+                    </form>
+                    <button class="btn btn-outline-danger btn-sm" type="button" title="Reject" data-bs-toggle="modal" data-bs-target="#rejectModal{{ d.id }}"><i class="bi bi-x-circle"></i></button>
+                  {% endif %}
+
+                  {% if d.requires_signature and not d.is_signed %}
+                    <button class="btn btn-outline-info btn-sm" type="button" title="Sign Document" data-bs-toggle="modal" data-bs-target="#signModal{{ d.id }}"><i class="bi bi-pen"></i></button>
+                  {% endif %}
+
+                  <a class="btn btn-outline-info btn-sm" href="{% url 'document_verification_status' d.id %}" title="Verification Status"><i class="bi bi-info-circle"></i></a>
+
+                  <form method="post" action="{% url 'send_document' d.id %}" class="d-inline">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-success btn-sm" type="submit" title="Send to Client"><i class="bi bi-envelope"></i></button>
+                  </form>
+                </div>
               </td>
             </tr>
+
+            <!-- Reject Modal -->
+            {% if d.verification_status == 'pending' and d.approval_workflow != 'none' %}
+            <div class="modal fade" id="rejectModal{{ d.id }}" tabindex="-1">
+              <div class="modal-dialog">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">Reject Document</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                  </div>
+                  <form method="post" action="{% url 'reject_document' d.id %}">
+                    {% csrf_token %}
+                    <div class="modal-body">
+                      <p>Are you sure you want to reject "{{ d.title }}"?</p>
+                      <div class="mb-3">
+                        <label for="approval_notes{{ d.id }}" class="form-label">Reason for rejection <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="approval_notes{{ d.id }}" name="approval_notes" rows="3" required></textarea>
+                      </div>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                      <button type="submit" class="btn btn-danger">Reject Document</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+
+            <!-- Sign Modal -->
+            {% if d.requires_signature and not d.is_signed %}
+            <div class="modal fade" id="signModal{{ d.id }}" tabindex="-1">
+              <div class="modal-dialog">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">Digital Signature</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                  </div>
+                  <form method="post" action="{% url 'sign_document' d.id %}">
+                    {% csrf_token %}
+                    <div class="modal-body">
+                      <p>Sign "{{ d.title }}" digitally?</p>
+                      <div class="mb-3">
+                        <label class="form-label">Signature</label>
+                        <canvas id="signatureCanvas{{ d.id }}" class="border" width="400" height="200" style="width: 100%; height: 200px;"></canvas>
+                        <input type="hidden" name="signature_data" id="signatureData{{ d.id }}">
+                      </div>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearSignature({{ d.id }})">Clear</button>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                      <button type="submit" class="btn btn-primary">Sign Document</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+            {% endif %}
           {% empty %}
-            <tr><td colspan="6" class="text-center text-muted py-4">No documents found.</td></tr>
+            <tr><td colspan="7" class="text-center text-muted py-4">No documents found.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function clearSignature(docId) {
+  const canvas = document.getElementById(`signatureCanvas${docId}`);
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  document.getElementById(`signatureData${docId}`).value = '';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize signature canvases
+  document.querySelectorAll('[id^="signatureCanvas"]').forEach(canvas => {
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
+
+    canvas.addEventListener('mousedown', () => drawing = true);
+    canvas.addEventListener('mouseup', () => drawing = false);
+    canvas.addEventListener('mouseout', () => drawing = false);
+
+    canvas.addEventListener('mousemove', function(e) {
+      if (!drawing) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#000';
+
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    });
+
+    // Save signature data when modal is submitted
+    const modal = canvas.closest('.modal');
+    modal.addEventListener('submit', function() {
+      const docId = canvas.id.replace('signatureCanvas', '');
+      document.getElementById(`signatureData${docId}`).value = canvas.toDataURL();
+    });
+  });
+});
+</script>
 {% endblock %}

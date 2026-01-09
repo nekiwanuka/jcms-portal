@@ -55,6 +55,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         user = request.user
         role = getattr(user, "role", None)
-        if not (getattr(user, "is_superuser", False) or role == User.Role.ADMIN):
+        if not (getattr(user, "is_superuser", False) or role in {User.Role.ADMIN, User.Role.MANAGING_DIRECTOR}):
             raise PermissionDenied("Only admins can delete payments.")
         return super().destroy(request, *args, **kwargs)

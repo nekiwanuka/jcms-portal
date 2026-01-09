@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from dataclasses import dataclass
 from decimal import Decimal
@@ -13,6 +14,44 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Frame, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+
+_PDF_FONTS_READY = False
+_PDF_BASE_FONT = "Helvetica"
+_PDF_BASE_FONT_BOLD = "Helvetica-Bold"
+
+
+def _pdf_setup_fonts(styles=None) -> tuple[str, str]:
+	"""Register preferred fonts once and optionally apply to a stylesheet.
+
+	Prefers Arial on Windows; falls back to Helvetica.
+	"""
+	global _PDF_FONTS_READY, _PDF_BASE_FONT, _PDF_BASE_FONT_BOLD
+	if not _PDF_FONTS_READY:
+		try:
+			windir = os.environ.get("WINDIR", r"C:\\Windows")
+			fonts_dir = Path(windir) / "Fonts"
+			arial = fonts_dir / "arial.ttf"
+			arial_bold = fonts_dir / "arialbd.ttf"
+			if arial.exists() and arial_bold.exists():
+				pdfmetrics.registerFont(TTFont("Arial", str(arial)))
+				pdfmetrics.registerFont(TTFont("Arial-Bold", str(arial_bold)))
+				_PDF_BASE_FONT = "Arial"
+				_PDF_BASE_FONT_BOLD = "Arial-Bold"
+		except Exception:
+			pass
+		_PDF_FONTS_READY = True
+
+	if styles is not None:
+		try:
+			styles["Normal"].fontName = _PDF_BASE_FONT
+			styles["Heading3"].fontName = _PDF_BASE_FONT_BOLD
+			styles["Title"].fontName = _PDF_BASE_FONT_BOLD
+		except Exception:
+			pass
+	return _PDF_BASE_FONT, _PDF_BASE_FONT_BOLD
 
 
 def money(val) -> str:
@@ -30,6 +69,8 @@ _COMPANY_FOOTER_LINE_1 = (
 )
 _COMPANY_FOOTER_LINE_2 = "+256 200 902 849  |   info@jambasimaging.com  |   F-26, Nasser Road Mall, Kampala – Uganda"
 
+_COMPANY_HEADER_CENTER = "JAMBAS IMAGING (U) LTD"
+
 
 def branding_static_paths() -> tuple[str | None, str | None]:
 	"""Return (svg_logo_path, png_logo_path) if available via staticfiles finders."""
@@ -45,16 +86,20 @@ def branding_static_paths() -> tuple[str | None, str | None]:
 
 def draw_header_footer(canvas, doc, *, title: str) -> None:
 	"""Draw a branded header/footer on each PDF page."""
+	_pdf_setup_fonts()
 	page_width, page_height = doc.pagesize
 	left = doc.leftMargin
 	right = page_width - doc.rightMargin
+	center_x = (left + right) / 2.0
 
 	# Responsive sizing for A4 vs A5 pages.
 	bar_h = 62 if page_height >= 750 else 48
-	title_font = 13 if page_height >= 750 else 11
+	text_font = 12 if page_height >= 750 else 10
 	logo_h = 34 if page_height >= 750 else 26
 	logo_w = 210 if page_height >= 750 else 160
 	footer_line_y = 58 if page_height >= 750 else 44
+	bar_y = page_height - bar_h
+	text_y = (bar_y + (bar_h / 2.0)) - (text_font * 0.35)
 	canvas.saveState()
 
 	# Header bar (blue) + white logo
@@ -64,7 +109,7 @@ def draw_header_footer(canvas, doc, *, title: str) -> None:
 	svg_path, png_path = branding_static_paths()
 	logo_drawn = False
 	logo_x = left
-	logo_y = page_height - bar_h + (14 if page_height >= 750 else 12)
+	logo_y = bar_y + ((bar_h - logo_h) / 2.0)
 	if svg_path:
 		try:
 			from svglib.svglib import svg2rlg
@@ -85,26 +130,27 @@ def draw_header_footer(canvas, doc, *, title: str) -> None:
 		except Exception:
 			pass
 
-	# Document title on the right
+	# Company name (center) and document title (right) on the same baseline
 	canvas.setFillColor(colors.white)
-	canvas.setFont("Helvetica-Bold", title_font)
-	canvas.drawRightString(right, page_height - (24 if page_height >= 750 else 22), title)
+	canvas.setFont(_PDF_BASE_FONT_BOLD, text_font)
+	canvas.drawCentredString(center_x, text_y, _COMPANY_HEADER_CENTER)
+	canvas.drawRightString(right, text_y, title)
 
-	# Footer
-	canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
-	canvas.setLineWidth(0.6)
-	canvas.line(left, footer_line_y, right, footer_line_y)
+	# Footer (blue bar with white text)
+	footer_h = 44 if page_height >= 750 else 36
+	canvas.setFillColor(colors.HexColor("#0d6efd"))
+	canvas.rect(0, 0, page_width, footer_h, fill=1, stroke=0)
 
 	footer_style = ParagraphStyle(
 		"pdf_footer",
-		fontName="Helvetica",
+		fontName=_PDF_BASE_FONT,
 		fontSize=(8 if page_height >= 750 else 7),
 		leading=(9 if page_height >= 750 else 8),
-		textColor=colors.HexColor("#334155"),
+		textColor=colors.white,
 		alignment=1,
 	)
-	footer_bottom = 12 if page_height >= 750 else 10
-	footer_frame_h = max(22, footer_line_y - footer_bottom - 6)
+	footer_bottom = 8
+	footer_frame_h = max(18, footer_h - footer_bottom - 4)
 	footer_frame = Frame(
 		left,
 		footer_bottom,
@@ -129,9 +175,11 @@ def draw_header_footer(canvas, doc, *, title: str) -> None:
 
 def kv_table(*, styles, left_rows: list[tuple[str, str]], right_rows: list[tuple[str, str]]):
 	"""Two-column key/value table for PDFs."""
+	base_font, base_font_bold = _pdf_setup_fonts(styles)
 	label_style = ParagraphStyle(
 		"pdf_kv_label",
 		parent=styles["Normal"],
+		fontName=base_font_bold,
 		fontSize=8.5,
 		leading=10,
 		textColor=colors.HexColor("#475569"),
@@ -139,6 +187,7 @@ def kv_table(*, styles, left_rows: list[tuple[str, str]], right_rows: list[tuple
 	value_style = ParagraphStyle(
 		"pdf_kv_value",
 		parent=styles["Normal"],
+		fontName=base_font,
 		fontSize=10,
 		leading=12,
 		textColor=colors.HexColor("#0f172a"),
@@ -160,13 +209,12 @@ def kv_table(*, styles, left_rows: list[tuple[str, str]], right_rows: list[tuple
 	table.setStyle(
 		TableStyle(
 			[
-				("BACKGROUND", (0, 0), (-1, -1), colors.whitesmoke),
 				("VALIGN", (0, 0), (-1, -1), "TOP"),
-				("LEFTPADDING", (0, 0), (-1, -1), 6),
-				("RIGHTPADDING", (0, 0), (-1, -1), 6),
-				("TOPPADDING", (0, 0), (-1, -1), 4),
-				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-				("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e2e8f0")),
+				("LEFTPADDING", (0, 0), (-1, -1), 8),
+				("RIGHTPADDING", (0, 0), (-1, -1), 8),
+				("TOPPADDING", (0, 0), (-1, -1), 6),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
 			]
 		)
 	)
@@ -186,10 +234,12 @@ def pdf_response(title: str, header: list[str], rows: list[list[str]], filename:
 		rightMargin=36,
 	)
 	styles = getSampleStyleSheet()
+	base_font, base_font_bold = _pdf_setup_fonts(styles)
 	styles.add(
 		ParagraphStyle(
 			"pdf_export_hint",
 			parent=styles["Normal"],
+			fontName=base_font,
 			fontSize=9,
 			leading=11,
 			textColor=colors.HexColor("#475569"),
@@ -276,15 +326,14 @@ def pdf_response(title: str, header: list[str], rows: list[list[str]], filename:
 			[
 				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
 				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-				("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
 				("FONTSIZE", (0, 0), (-1, 0), 10),
 				("ALIGN", (0, 0), (-1, 0), "LEFT"),
 				("LEFTPADDING", (0, 0), (-1, -1), 6),
 				("RIGHTPADDING", (0, 0), (-1, -1), 6),
 				("TOPPADDING", (0, 0), (-1, -1), 4),
 				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-				("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-				("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
+				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
 				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 			]
 		)

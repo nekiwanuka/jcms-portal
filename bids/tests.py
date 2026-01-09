@@ -117,6 +117,9 @@ class BidViewsTests(TestCase):
 		self.client.force_login(self.user)
 		session = self.client.session
 		session["otp_verified"] = True
+		session["prepared_by_name"] = "Tester"
+		session["issued_by_name"] = "Tester"
+		session["signed_by_name"] = "Tester"
 		session.save()
 
 		self.client_obj = Client.objects.create(

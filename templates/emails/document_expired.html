@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #dc3545; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9f9f9; }
+        .footer { background: #f1f1f1; padding: 10px; text-align: center; font-size: 12px; color: #666; }
+        .alert { background: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .document-info { background: white; padding: 15px; margin: 15px 0; border-left: 4px solid #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Jambas Imaging - Document Expired</h1>
+        </div>
+
+        <div class="content">
+            <p>Dear User,</p>
+
+            <div class="alert">
+                <strong>Document Has Expired</strong><br>
+                The following document has expired {{ days_expired }} days ago.
+            </div>
+
+            <div class="document-info">
+                <h3>{{ document.title }}</h3>
+                <p><strong>Client:</strong> {{ document.client.name }}</p>
+                <p><strong>Document Type:</strong> {{ document.get_doc_type_display }}</p>
+                <p><strong>Expiry Date:</strong> {{ expiry_date|date:"F j, Y" }}</p>
+                <p><strong>Days Since Expiry:</strong> {{ days_expired }}</p>
+                {% if document.notes %}
+                <p><strong>Notes:</strong> {{ document.notes }}</p>
+                {% endif %}
+            </div>
+
+            <p><strong>Immediate Action Required:</strong></p>
+            <ul>
+                <li>Review the document and assess the impact of expiry</li>
+                <li>Renew or replace the expired document</li>
+                <li>Update the document record with new expiry information</li>
+                <li>Notify all relevant stakeholders</li>
+                <li>Check if any processes or services are affected</li>
+            </ul>
+
+            <p>You can access the document in the <a href="#">Document Archive</a> section of the portal.</p>
+
+            <p>Regards,<br>
+            Jambas Business Management Portal</p>
+        </div>
+
+        <div class="footer">
+            <p>This is an automated notification from Jambas Imaging Business Management Portal.<br>
+            Please do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>

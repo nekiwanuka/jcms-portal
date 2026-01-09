@@ -1,0 +1,30 @@
+Jambas Imaging - Appointment Reminder
+
+Dear {{ appointment.client.name }},
+
+This is a friendly reminder about your upcoming appointment with Jambas Imaging.
+
+Appointment Details:
+- Type: {{ appointment.get_appointment_type_display }}
+- Date: {{ appointment.scheduled_for|date:"l, F j, Y" }}
+- Time: {{ appointment.scheduled_for|time:"H:i" }}
+{% if appointment.meeting_location %}
+- Location: {{ appointment.meeting_location }}
+{% endif %}
+{% if appointment.meeting_mode == 'google_meet' and appointment.meeting_link %}
+- Meeting Link: {{ appointment.meeting_link }}
+{% endif %}
+{% if appointment.notes %}
+- Notes: {{ appointment.notes }}
+{% endif %}
+
+Please arrive 10-15 minutes early for your appointment. If you need to reschedule or have any questions, please contact us immediately.
+
+We look forward to seeing you tomorrow!
+
+Regards,
+Jambas Imaging Team
+
+---
+This is an automated reminder from Jambas Imaging Business Management Portal.
+Please do not reply to this email.

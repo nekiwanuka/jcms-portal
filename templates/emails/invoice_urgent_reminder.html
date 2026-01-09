@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #dc3545; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9f9f9; }
+        .footer { background: #f1f1f1; padding: 10px; text-align: center; font-size: 12px; color: #666; }
+        .urgent-alert { background: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .invoice-info { background: white; padding: 15px; margin: 15px 0; border-left: 4px solid #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>URGENT: Invoice Payment Due</h1>
+        </div>
+
+        <div class="content">
+            <p>Dear {{ invoice.client.name }},</p>
+
+            <div class="urgent-alert">
+                <strong>URGENT PAYMENT REQUIRED</strong><br>
+                Invoice {{ invoice.invoice_number }} is due in {{ days_until_due }} day{{ days_until_due|pluralize }}.
+            </div>
+
+            <div class="invoice-info">
+                <h3>Invoice {{ invoice.invoice_number }}</h3>
+                <p><strong>Amount Due:</strong> UGX {{ invoice.total_amount|floatformat:2 }}</p>
+                <p><strong>Due Date:</strong> {{ invoice.due_date|date:"F j, Y" }}</p>
+                <p><strong>Days Until Due:</strong> {{ days_until_due }}</p>
+                {% if invoice.description %}
+                <p><strong>Description:</strong> {{ invoice.description }}</p>
+                {% endif %}
+            </div>
+
+            <p><strong>Immediate Action Required:</strong></p>
+            <ul>
+                <li>Please arrange payment immediately to avoid late fees</li>
+                <li>Contact us if you have already made payment</li>
+                <li>Call us at +256 200 902 849 if you need to discuss payment terms</li>
+            </ul>
+
+            <p>Payment can be made via bank transfer, mobile money, or in person at our offices.</p>
+
+            <p>Regards,<br>
+            Jambas Imaging Billing Department</p>
+        </div>
+
+        <div class="footer">
+            <p>This is an automated urgent payment reminder from Jambas Imaging Business Management Portal.<br>
+            Please do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>

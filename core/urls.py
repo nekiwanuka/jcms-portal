@@ -6,6 +6,9 @@ urlpatterns = [
     # Make the dashboard the homepage
     path("", views.dashboard_view, name="dashboard"),
 
+    # Global search
+    path("search/", views.global_search, name="global_search"),
+
     # Frontend module pages (template-rendered, login-protected)
     path("clients/", views.clients_view, name="clients"),
     path("clients/add/", views.add_client, name="add_client"),
@@ -136,5 +139,6 @@ urlpatterns = [
     path("system/users/", views.users_view, name="users"),
     path("system/users/add/", views.add_user, name="add_user"),
     path("system/users/<int:user_id>/edit/", views.edit_user, name="edit_user"),
+	path("system/users/<int:user_id>/delete/", views.delete_user, name="delete_user"),
     path("system/audit/", views.audit_logs_view, name="audit_logs"),
 ]

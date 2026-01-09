@@ -4,12 +4,14 @@ from datetime import datetime as _datetime
 from io import BytesIO
 from urllib.parse import urlencode
 from decimal import Decimal
+import os
+from pathlib import Path
 
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.contrib import messages
 from django.contrib.auth import get_user_model
-from django.db.models import F
+from django.db.models import F, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -17,7 +19,82 @@ from django.utils import timezone
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, A5
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+
+_PDF_FONTS_READY = False
+_PDF_BASE_FONT = "Helvetica"
+_PDF_BASE_FONT_BOLD = "Helvetica-Bold"
+
+
+class _BottomAlignedFlowables(Flowable):
+	"""Draw a list of flowables bottom-aligned within the remaining frame.
+
+	If the block can't fit in the remaining space, it falls back to normal
+	flow so the content can naturally move/split across pages.
+	"""
+
+	def __init__(self, flowables):
+		super().__init__()
+		self.flowables = list(flowables or [])
+		self._wrapped = []
+		self._padding = 0
+
+	def wrap(self, availWidth, availHeight):
+		self._wrapped = []
+		total_h = 0
+		for flowable in self.flowables:
+			w, h = flowable.wrap(availWidth, availHeight)
+			self._wrapped.append((flowable, w, h))
+			total_h += h
+		self._padding = max(0, availHeight - total_h)
+		return availWidth, total_h + self._padding
+
+	def split(self, availWidth, availHeight):
+		# If we don't fit, let ReportLab handle page flow/splitting normally.
+		return self.flowables
+
+	def draw(self):
+		y = self._padding
+		# Draw from top to bottom in the given order.
+		total_h = sum(h for _, _, h in self._wrapped)
+		cursor = y + total_h
+		for flowable, _, h in self._wrapped:
+			cursor -= h
+			flowable.drawOn(self.canv, 0, cursor)
+
+
+def _pdf_setup_fonts(styles=None) -> tuple[str, str]:
+	"""Register preferred fonts once and optionally apply to a stylesheet.
+
+	Prefers Arial on Windows; falls back to Helvetica.
+	"""
+	global _PDF_FONTS_READY, _PDF_BASE_FONT, _PDF_BASE_FONT_BOLD
+	if not _PDF_FONTS_READY:
+		try:
+			windir = os.environ.get("WINDIR", r"C:\\Windows")
+			fonts_dir = Path(windir) / "Fonts"
+			arial = fonts_dir / "arial.ttf"
+			arial_bold = fonts_dir / "arialbd.ttf"
+			if arial.exists() and arial_bold.exists():
+				pdfmetrics.registerFont(TTFont("Arial", str(arial)))
+				pdfmetrics.registerFont(TTFont("Arial-Bold", str(arial_bold)))
+				_PDF_BASE_FONT = "Arial"
+				_PDF_BASE_FONT_BOLD = "Arial-Bold"
+		except Exception:
+			pass
+		_PDF_FONTS_READY = True
+
+	if styles is not None:
+		try:
+			styles["Normal"].fontName = _PDF_BASE_FONT
+			styles["Heading3"].fontName = _PDF_BASE_FONT_BOLD
+			styles["Title"].fontName = _PDF_BASE_FONT_BOLD
+		except Exception:
+			pass
+	return _PDF_BASE_FONT, _PDF_BASE_FONT_BOLD
 
 
 def _role(user) -> str | None:
@@ -25,11 +102,19 @@ def _role(user) -> str | None:
 
 
 def _is_admin(user) -> bool:
-	return bool(user and user.is_authenticated and (getattr(user, "is_superuser", False) or _role(user) == "admin"))
+	return bool(
+		user
+		and user.is_authenticated
+		and (getattr(user, "is_superuser", False) or _role(user) in {"admin", "managing_director"})
+	)
 
 
 def _can_view_income(user) -> bool:
-	return bool(user and user.is_authenticated and (getattr(user, "is_superuser", False) or _role(user) in {"admin", "manager"}))
+	return bool(
+		user
+		and user.is_authenticated
+		and (getattr(user, "is_superuser", False) or _role(user) in {"admin", "managing_director", "manager"})
+	)
 
 
 def _require_admin(request):
@@ -229,10 +314,12 @@ def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename
 		rightMargin=36,
 	)
 	styles = getSampleStyleSheet()
+	base_font, base_font_bold = _pdf_setup_fonts(styles)
 	styles.add(
 		ParagraphStyle(
 			"pdf_export_hint",
 			parent=styles["Normal"],
+			fontName=base_font,
 			fontSize=9,
 			leading=11,
 			textColor=colors.HexColor("#475569"),
@@ -326,15 +413,14 @@ def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename
 			[
 				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
 				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-				("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
 				("FONTSIZE", (0, 0), (-1, 0), 10),
 				("ALIGN", (0, 0), (-1, 0), "LEFT"),
 				("LEFTPADDING", (0, 0), (-1, -1), 6),
 				("RIGHTPADDING", (0, 0), (-1, -1), 6),
 				("TOPPADDING", (0, 0), (-1, -1), 4),
 				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-				("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-				("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
+				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
 				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 			]
 		)
@@ -761,7 +847,12 @@ def add_invoice(request):
 			invoice = form.save(commit=False)
 			invoice.created_by = request.user
 			if not (invoice.prepared_by_name or "").strip():
-				invoice.prepared_by_name = getattr(request.user, "email", "") or str(request.user)
+				invoice.prepared_by_name = (
+					(request.session.get("prepared_by_name") or "").strip()
+					or getattr(request.user, "full_name", "")
+					or getattr(request.user, "email", "")
+					or str(request.user)
+				)
 			invoice.save()
 
 			# If invoice is created from an approved quotation, copy items and mark quotation converted.
@@ -1109,21 +1200,23 @@ def cancel_quotation(request, quotation_id: int):
 	return redirect("quotation_detail", quotation_id=quote.id)
 
 
-def _build_quotation_pdf_bytes(quote, *, proforma: bool = False) -> bytes:
+def _build_quotation_pdf_bytes(quote, *, proforma: bool = False, issued_by: str | None = None) -> bytes:
 	from reportlab.lib.units import mm
 
 	buffer = BytesIO()
-	title = f"Proforma {quote.number}" if proforma else f"Quotation {quote.number}"
+	doc_type = "PROFORMA INVOICE" if proforma else "QUOTATION"
 	doc = SimpleDocTemplate(
 		buffer,
 		pagesize=A4,
-		title=title,
+		title=f"{doc_type} {quote.number}",
 		topMargin=90,
 		bottomMargin=72,
 		leftMargin=36,
 		rightMargin=36,
 	)
 	styles = getSampleStyleSheet()
+	base_font, base_font_bold = _pdf_setup_fonts(styles)
+	styles["Title"].textColor = colors.HexColor("#0f172a")
 	styles.add(
 		ParagraphStyle(
 			"pdf_section",
@@ -1136,66 +1229,276 @@ def _build_quotation_pdf_bytes(quote, *, proforma: bool = False) -> bytes:
 	item_style = ParagraphStyle(
 		"pdf_item",
 		parent=styles["Normal"],
+		fontName=base_font,
 		fontSize=9.5,
 		leading=11,
 		textColor=colors.HexColor("#0f172a"),
 	)
+	note_style = ParagraphStyle(
+		"pdf_notes",
+		parent=styles["Normal"],
+		fontName=base_font,
+		fontSize=10,
+		leading=14,
+		textColor=colors.HexColor("#0f172a"),
+	)
+
+	def _default_notes_html(*, is_proforma: bool) -> str:
+		payment = (
+			"Payment methods accepted: <b>Bank</b>, <b>Mobile Money</b>, and <b>Cash</b>. "
+			"Please quote the document number on all payments for easy tracking."
+		)
+		sep = "<br/><br/>"
+		if is_proforma:
+			lines = [
+				"• This Proforma Invoice is issued for payment request/confirmation and is not a Tax Invoice.",
+				"• Work/production starts after payment is confirmed (and artwork approval where applicable).",
+				"• Delivery/lead time starts after payment confirmation.",
+				"• VAT is applied where applicable as shown on this document.",
+				f"• {payment}",
+			]
+			return sep.join(lines)
+		lines = [
+			"• This quotation is valid until the stated <b>Valid until</b> date.",
+			"• Prices may change after expiry or if scope/specifications change.",
+			"• Work/production starts after confirmation and payment (unless agreed otherwise).",
+			"• VAT is applied where applicable as shown on this quotation.",
+			f"• {payment}",
+		]
+		return sep.join(lines)
 
 	client_name = str(quote.client)
 	client_email = getattr(quote.client, "email", "") or "-"
+	issued_by_name = (issued_by or "").strip()
+	if not issued_by_name:
+		creator = getattr(quote, "created_by", None)
+		issued_by_name = (
+			(getattr(creator, "get_full_name", lambda: "")() if creator else "")
+			or (getattr(creator, "email", "") if creator else "")
+			or "JAMBAS IMAGING (U) LTD"
+		)
+	quote_date = (
+		timezone.localtime(quote.created_at).date().isoformat() if getattr(quote, "created_at", None) else "-"
+	)
 	valid_until = quote.valid_until.isoformat() if quote.valid_until else "-"
-	prepared_by = (getattr(quote.created_by, "email", "") if quote.created_by else "") or "-"
+
+	# Build TO/FROM blocks as flowables.
+	blank = ""
+	client_obj = getattr(quote, "client", None)
+	address = (getattr(client_obj, "physical_address", "") or "").strip()
+	contact_person = (getattr(client_obj, "contact_person", "") or "").strip()
+	phone = (getattr(client_obj, "phone", "") or "").strip()
+	email = (getattr(client_obj, "email", "") or "").strip()
+	if phone and email:
+		phone_email_line = f"{phone} / {email}"
+	elif phone:
+		phone_email_line = phone
+	elif email:
+		phone_email_line = email
+	else:
+		phone_email_line = blank
+
+	label_style = ParagraphStyle(
+		"pdf_kv_label",
+		parent=styles["Normal"],
+		fontName=base_font_bold,
+		fontSize=9,
+		leading=11,
+		textColor=colors.HexColor("#0f172a"),
+	)
+	value_style = ParagraphStyle(
+		"pdf_kv_value",
+		parent=styles["Normal"],
+		fontName=base_font,
+		fontSize=9,
+		leading=11,
+		textColor=colors.HexColor("#0f172a"),
+	)
+
+	def _kv_row(label: str, value: str) -> list[object]:
+		label_txt = (label or "").strip().upper() + ":"
+		return [Paragraph(label_txt, label_style), Paragraph(value or blank, value_style)]
+
+	# Keep TO compact: each parameter on the same line with its value.
+	to_kv = Table(
+		[
+			_kv_row("Client Name", client_name),
+			_kv_row("Address", address),
+			_kv_row("Contact Person", contact_person),
+			_kv_row("Phone", phone),
+			_kv_row("Email", email),
+		],
+		colWidths=[28 * mm, float(doc.width) * 0.5 - 28 * mm],
+	)
+	to_kv.setStyle(
+		TableStyle(
+			[
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+				("RIGHTPADDING", (0, 0), (0, -1), 6),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+			]
+		)
+	)
+	gutter_w = 14 * mm
+	to_w = (float(doc.width) - gutter_w) / 2.0
+	from_w = (float(doc.width) - gutter_w) / 2.0
+	from_kv = Table(
+		[
+			_kv_row("Company", "JAMBAS IMAGING (U) LTD"),
+			_kv_row("Address", "F-26, Nasser Road Mall, Kampala – Uganda"),
+			_kv_row("Tel", "+256 200 902 849"),
+			_kv_row("Email", "info@jambasimaging.com"),
+			_kv_row("Website", "www.jambasimaging.com"),
+		],
+		colWidths=[28 * mm, from_w - 28 * mm],
+	)
+	from_kv.setStyle(
+		TableStyle(
+			[
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+				("RIGHTPADDING", (0, 0), (0, -1), 6),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+			]
+		)
+	)
+
+	to_from_table = Table(
+		[
+			["TO", "", "FROM"],
+			[to_kv, "", from_kv],
+		],
+		# Span full available width so the blue header bar aligns with other tables.
+		colWidths=[to_w, gutter_w, from_w],
+	)
+	# Style the TO/FROM table: blue header, white text; no vertical separators.
+	to_from_table.setStyle(
+		TableStyle(
+			[
+				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
+				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("ALIGN", (0, 0), (0, 0), "LEFT"),
+				("ALIGN", (2, 0), (2, 0), "LEFT"),
+				("LEFTPADDING", (0, 0), (0, -1), 6),
+				("RIGHTPADDING", (0, 0), (0, -1), 6),
+				("LEFTPADDING", (1, 0), (1, -1), 0),
+				("RIGHTPADDING", (1, 0), (1, -1), 0),
+				("LEFTPADDING", (2, 0), (2, -1), 6),
+				("RIGHTPADDING", (2, 0), (2, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 6),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+				("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+				("LINEBELOW", (0, 0), (-1, 0), 0.8, colors.HexColor("#0d6efd")),
+			]
+		)
+	)
+
+	meta_table = Table(
+		[
+			["ISSUED BY", "DATE | VALID UNTIL"],
+			[issued_by_name, f"{quote_date} | {valid_until}"],
+		],
+		colWidths=[doc.width * 0.45, doc.width * 0.55],
+	)
+	meta_table.setStyle(
+		TableStyle(
+			[
+				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
+				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("ALIGN", (0, 0), (-1, 0), "LEFT"),
+				("LEFTPADDING", (0, 0), (-1, -1), 6),
+				("RIGHTPADDING", (0, 0), (-1, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 4),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+			]
+		)
+	)
+
+	# Create header table with document type on left and number on right
+	header_table = Table(
+		[
+			[doc_type, f"No. {quote.number}"],
+		],
+		colWidths=[doc.width * 0.5, doc.width * 0.5],
+	)
+	header_table.setStyle(
+		TableStyle(
+			[
+				("ALIGN", (0, 0), (0, 0), "LEFT"),
+				("ALIGN", (1, 0), (1, 0), "RIGHT"),
+				("FONTNAME", (0, 0), (-1, -1), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, -1), 14),
+				("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+			]
+		)
+	)
 
 	elements = [
-		Paragraph(title, styles["Title"]),
+		header_table,
 		Spacer(1, 8),
-		_pdf_kv_table(
-			styles=styles,
-			left_rows=[
-				("Client", client_name),
-				("Email", client_email),
-			],
-			right_rows=[
-				("Category", str(quote.category_label or "-")),
-				("Valid until", valid_until),
-				("Prepared by", prepared_by),
-			],
-		),
+		to_from_table,
+		Spacer(1, 20),
+		meta_table,
 		Spacer(1, 12),
 	]
 
 	items = list(quote.items.all())
 	rows: list[list[object]] = []
 	for it in items:
-		desc = (it.item_name or it.description or "-")
+		item_name = (it.item_name or "-")
+		desc = (it.description or "-")
 		rows.append(
 			[
-				Paragraph(desc, item_style),
+				Paragraph(str(item_name), item_style),
+				Paragraph(str(desc), item_style),
 				Paragraph(str(it.quantity), item_style),
 				Paragraph(_money(it.unit_price), item_style),
 				Paragraph(_money(it.line_total()), item_style),
 			]
 		)
 	if not rows:
-		rows = [[Paragraph("(No items)", item_style), "-", "-", "-"]]
+		rows = [[Paragraph("(No items)", item_style), "-", "-", "-", "-"]]
 
-	data = [["Item", "Qty", "Unit Price", "Line Total"]] + rows
-	table = Table(data, repeatRows=1, colWidths=[92 * mm, 16 * mm, 35 * mm, 35 * mm])
+	data = [["Item", "Description", "Qty", "Unit Price", "Amount"]] + rows
+	item_w = 35 * mm
+	qty_w = 25 * mm
+	unit_w = 27 * mm
+	amt_w = 27 * mm
+	# Make the table span the full available width to keep vertical grid lines
+	# perfectly aligned with other right-aligned tables.
+	desc_w = max(40 * mm, float(doc.width) - (item_w + qty_w + unit_w + amt_w))
+	item_col_widths = [item_w, desc_w, qty_w, unit_w, amt_w]
+	table = Table(data, repeatRows=1, colWidths=item_col_widths)
 	table.setStyle(
 		TableStyle(
 			[
 				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
 				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-				("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
 				("FONTSIZE", (0, 0), (-1, 0), 10),
-				("ALIGN", (1, 1), (1, -1), "RIGHT"),
-				("ALIGN", (2, 1), (-1, -1), "RIGHT"),
+				("ALIGN", (2, 1), (2, -1), "CENTER"),
+				("ALIGN", (3, 1), (4, -1), "RIGHT"),
 				("LEFTPADDING", (0, 0), (-1, -1), 6),
 				("RIGHTPADDING", (0, 0), (-1, -1), 6),
 				("TOPPADDING", (0, 0), (-1, -1), 4),
 				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-				("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-				("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
+				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
 				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 			]
 		)
@@ -1203,42 +1506,75 @@ def _build_quotation_pdf_bytes(quote, *, proforma: bool = False) -> bytes:
 	elements.append(table)
 
 	discount = (quote.discount_amount or Decimal("0.00")).quantize(Decimal("0.01"))
-	amount_rows: list[list[str]] = [["Subtotal", f"{quote.currency} {_money(quote.subtotal())}"]]
+	amount_rows: list[list[str]] = [["Sub total", f"{quote.currency} {_money(quote.subtotal())}"]]
 	if discount > Decimal("0.00"):
 		amount_rows.append(["Discount", f"{quote.currency} {_money(discount)}"])
 	if quote.vat_enabled:
-		amount_rows.append(["VAT", f"{quote.currency} {_money(quote.vat_amount())}"])
+		amount_rows.append(["VAT 18%", f"{quote.currency} {_money(quote.vat_amount())}"])
 	else:
 		amount_rows.append(["VAT", "Not applied"])
-	amount_rows.append(["Total", f"{quote.currency} {_money(quote.total())}"])
+	amount_rows.append(["TOTAL", f"{quote.currency} {_money(quote.total())}"])
 
-	amount_table = Table(amount_rows, colWidths=[70 * mm, 50 * mm], hAlign="RIGHT")
+	amount_data = [["Summary", "Amount"]] + amount_rows
+	amount_table = Table(
+		amount_data,
+		colWidths=[item_col_widths[2] + item_col_widths[3], item_col_widths[4]],
+	)
 	amount_table.setStyle(
 		TableStyle(
 			[
-				("ALIGN", (0, 0), (-1, -1), "RIGHT"),
-				("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-				("FONTSIZE", (0, 0), (-1, -1), 10),
-				("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
-				("TOPPADDING", (0, 0), (-1, -1), 3),
-				("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-				("LINEABOVE", (0, -1), (-1, -1), 0.8, colors.HexColor("#0d6efd")),
+				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
+				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
+				("LEFTPADDING", (0, 0), (-1, -1), 6),
+				("RIGHTPADDING", (0, 0), (-1, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 4),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+				("ALIGN", (0, 1), (0, -1), "LEFT"),
+				("ALIGN", (1, 1), (1, -1), "RIGHT"),
+				("FONTNAME", (0, 1), (0, -1), base_font_bold),
+				("FONTNAME", (0, -1), (-1, -1), base_font_bold),
+				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 			]
 		)
 	)
-	elements += [Spacer(1, 12), amount_table]
+	amount_wrap = Table(
+		[["", amount_table]],
+		colWidths=[item_col_widths[0] + item_col_widths[1], item_col_widths[2] + item_col_widths[3] + item_col_widths[4]],
+	)
+	amount_wrap.setStyle(
+		TableStyle(
+			[
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+			]
+		)
+	)
+	elements += [Spacer(1, 12), amount_wrap]
 
-	if quote.notes:
-		elements += [
-			Spacer(1, 10),
-			Paragraph("Notes", styles["pdf_section"]),
-			Paragraph(quote.notes, styles["Normal"]),
-		]
+	notes_text = (quote.notes or "").strip()
+	if not notes_text:
+		notes_text = _default_notes_html(is_proforma=proforma)
+	# Render notes (either user-provided or defaults) at the bottom above the footer.
+	elements += [
+		Spacer(1, 12),
+		_BottomAlignedFlowables(
+			[
+				Paragraph("Notes / Terms", styles["pdf_section"]),
+				Paragraph(notes_text, note_style),
+			]
+		),
+	]
 
 	doc.build(
 		elements,
-		onFirstPage=lambda c, d: _pdf_draw_header_footer(c, d, title=title),
-		onLaterPages=lambda c, d: _pdf_draw_header_footer(c, d, title=title),
+		onFirstPage=lambda c, d: _pdf_draw_header_footer(c, d, title=f"{doc_type} {quote.number}"),
+		onLaterPages=lambda c, d: _pdf_draw_header_footer(c, d, title=f"{doc_type} {quote.number}"),
 	)
 	pdf_bytes = buffer.getvalue()
 	buffer.close()
@@ -1250,7 +1586,8 @@ def _build_quotation_pdf_bytes(quote, *, proforma: bool = False) -> bytes:
 def quotation_pdf(request, quotation_id: int):
 	from sales.models import Quotation
 	quote = get_object_or_404(Quotation.objects.select_related("client", "created_by"), pk=quotation_id)
-	pdf_bytes = _build_quotation_pdf_bytes(quote, proforma=False)
+	shift_issued = (request.session.get("issued_by_name") or request.session.get("prepared_by_name") or "").strip() or None
+	pdf_bytes = _build_quotation_pdf_bytes(quote, proforma=False, issued_by=shift_issued)
 	client_label = str(quote.client).replace(" ", "_")[:40] or "Client"
 	filename = f"Quotation_{client_label}_{quote.number}.pdf"
 	response = HttpResponse(pdf_bytes, content_type="application/pdf")
@@ -1267,7 +1604,8 @@ def quotation_pdf(request, quotation_id: int):
 def proforma_pdf(request, quotation_id: int):
 	from sales.models import Quotation
 	quote = get_object_or_404(Quotation.objects.select_related("client", "created_by"), pk=quotation_id)
-	pdf_bytes = _build_quotation_pdf_bytes(quote, proforma=True)
+	shift_issued = (request.session.get("issued_by_name") or request.session.get("prepared_by_name") or "").strip() or None
+	pdf_bytes = _build_quotation_pdf_bytes(quote, proforma=True, issued_by=shift_issued)
 	client_label = str(quote.client).replace(" ", "_")[:40] or "Client"
 	filename = f"Proforma_{client_label}_{quote.number}.pdf"
 	response = HttpResponse(pdf_bytes, content_type="application/pdf")
@@ -1299,7 +1637,8 @@ def send_quotation(request, quotation_id: int):
 		messages.error(request, "Client does not have an email address.")
 		return redirect("quotation_detail", quotation_id=quote.id)
 
-	pdf_bytes = _build_quotation_pdf_bytes(quote, proforma=False)
+	shift_issued = (request.session.get("issued_by_name") or request.session.get("prepared_by_name") or "").strip() or None
+	pdf_bytes = _build_quotation_pdf_bytes(quote, proforma=False, issued_by=shift_issued)
 	client_label = str(quote.client).replace(" ", "_")[:40] or "Client"
 	filename = f"Quotation_{client_label}_{quote.number}.pdf"
 	subject = f"Quotation {quote.number}"
@@ -1413,6 +1752,8 @@ _COMPANY_FOOTER_LINE_1 = (
 )
 _COMPANY_FOOTER_LINE_2 = "+256 200 902 849  |   info@jambasimaging.com  |   F-26, Nasser Road Mall, Kampala – Uganda"
 
+_COMPANY_HEADER_CENTER = "JAMBAS IMAGING (U) LTD"
+
 
 def _pdf_branding_static_paths() -> tuple[str | None, str | None]:
 	"""Return (svg_logo_path, png_logo_path) if available via staticfiles finders."""
@@ -1428,17 +1769,21 @@ def _pdf_branding_static_paths() -> tuple[str | None, str | None]:
 def _pdf_draw_header_footer(canvas, doc, *, title: str) -> None:
 	"""Draw a branded header/footer on each PDF page."""
 	from reportlab.platypus import Frame, Paragraph
+	_pdf_setup_fonts()
 
 	page_width, page_height = doc.pagesize
 	left = doc.leftMargin
 	right = page_width - doc.rightMargin
+	center_x = (left + right) / 2.0
 
 	# Responsive sizing for A4 vs A5 pages.
 	bar_h = 62 if page_height >= 750 else 48
-	title_font = 13 if page_height >= 750 else 11
+	text_font = 12 if page_height >= 750 else 10
 	logo_h = 34 if page_height >= 750 else 26
 	logo_w = 210 if page_height >= 750 else 160
 	footer_line_y = 58 if page_height >= 750 else 44
+	bar_y = page_height - bar_h
+	text_y = (bar_y + (bar_h / 2.0)) - (text_font * 0.35)
 	canvas.saveState()
 
 	# Header bar (blue) + white logo
@@ -1448,7 +1793,7 @@ def _pdf_draw_header_footer(canvas, doc, *, title: str) -> None:
 	svg_path, png_path = _pdf_branding_static_paths()
 	logo_drawn = False
 	logo_x = left
-	logo_y = page_height - bar_h + (14 if page_height >= 750 else 12)
+	logo_y = bar_y + ((bar_h - logo_h) / 2.0)
 	if svg_path:
 		try:
 			from svglib.svglib import svg2rlg
@@ -1468,26 +1813,27 @@ def _pdf_draw_header_footer(canvas, doc, *, title: str) -> None:
 		except Exception:
 			pass
 
-	# Document title on the right
+	# Company name (center) and document title (right) on the same baseline
 	canvas.setFillColor(colors.white)
-	canvas.setFont("Helvetica-Bold", title_font)
-	canvas.drawRightString(right, page_height - (24 if page_height >= 750 else 22), title)
+	canvas.setFont(_PDF_BASE_FONT_BOLD, text_font)
+	canvas.drawCentredString(center_x, text_y, _COMPANY_HEADER_CENTER)
+	canvas.drawRightString(right, text_y, title)
 
-	# Footer
-	canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
-	canvas.setLineWidth(0.6)
-	canvas.line(left, footer_line_y, right, footer_line_y)
+	# Footer (blue bar with white text)
+	footer_h = 44 if page_height >= 750 else 36
+	canvas.setFillColor(colors.HexColor("#0d6efd"))
+	canvas.rect(0, 0, page_width, footer_h, fill=1, stroke=0)
 
 	footer_style = ParagraphStyle(
 		"pdf_footer",
-		fontName="Helvetica",
+		fontName=_PDF_BASE_FONT,
 		fontSize=(8 if page_height >= 750 else 7),
 		leading=(9 if page_height >= 750 else 8),
-		textColor=colors.HexColor("#334155"),
+		textColor=colors.white,
 		alignment=1,
 	)
-	footer_bottom = 12 if page_height >= 750 else 10
-	footer_frame_h = max(22, footer_line_y - footer_bottom - 6)
+	footer_bottom = 8
+	footer_frame_h = max(18, footer_h - footer_bottom - 4)
 	footer_frame = Frame(
 		left,
 		footer_bottom,
@@ -1512,9 +1858,11 @@ def _pdf_draw_header_footer(canvas, doc, *, title: str) -> None:
 
 def _pdf_kv_table(*, styles, left_rows: list[tuple[str, str]], right_rows: list[tuple[str, str]]):
 	"""Two-column key/value table for PDFs."""
+	base_font, base_font_bold = _pdf_setup_fonts(styles)
 	label_style = ParagraphStyle(
 		"pdf_kv_label",
 		parent=styles["Normal"],
+		fontName=base_font_bold,
 		fontSize=8.5,
 		leading=10,
 		textColor=colors.HexColor("#475569"),
@@ -1522,6 +1870,7 @@ def _pdf_kv_table(*, styles, left_rows: list[tuple[str, str]], right_rows: list[
 	value_style = ParagraphStyle(
 		"pdf_kv_value",
 		parent=styles["Normal"],
+		fontName=base_font,
 		fontSize=10,
 		leading=12,
 		textColor=colors.HexColor("#0f172a"),
@@ -1543,9 +1892,7 @@ def _pdf_kv_table(*, styles, left_rows: list[tuple[str, str]], right_rows: list[
 	t.setStyle(
 		TableStyle(
 			[
-				("BACKGROUND", (0, 0), (-1, -1), colors.whitesmoke),
-				("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
-				("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e2e8f0")),
+				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
 				("LEFTPADDING", (0, 0), (-1, -1), 8),
 				("RIGHTPADDING", (0, 0), (-1, -1), 8),
 				("TOPPADDING", (0, 0), (-1, -1), 6),
@@ -1562,7 +1909,7 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 	from reportlab.lib.units import mm
 
 	buffer = BytesIO()
-	title = f"Invoice {invoice.number}"
+	title = invoice.number
 	doc = SimpleDocTemplate(
 		buffer,
 		pagesize=A4,
@@ -1573,6 +1920,8 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 		rightMargin=36,
 	)
 	styles = getSampleStyleSheet()
+	base_font, base_font_bold = _pdf_setup_fonts(styles)
+	styles["Title"].textColor = colors.HexColor("#0f172a")
 	styles.add(
 		ParagraphStyle(
 			"pdf_section",
@@ -1585,10 +1934,30 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 	item_style = ParagraphStyle(
 		"pdf_item",
 		parent=styles["Normal"],
+		fontName=base_font,
 		fontSize=9.5,
 		leading=11,
 		textColor=colors.HexColor("#0f172a"),
 	)
+
+	note_style = ParagraphStyle(
+		"pdf_notes",
+		parent=styles["Normal"],
+		fontName=base_font,
+		fontSize=10,
+		leading=14,
+		textColor=colors.HexColor("#0f172a"),
+	)
+
+	def _default_notes_html() -> str:
+		sep = "<br/><br/>"
+		lines = [
+			"• Payment is due within stated terms. Late payments may attract penalties.",
+			"• Services and reports are released upon payment confirmation.",
+			"• Payments are non-refundable once services are rendered.",
+			"• This is a system-generated invoice.",
+		]
+		return sep.join(lines)
 
 	client_name = str(invoice.client)
 	client_email = getattr(invoice.client, "email", "") or "-"
@@ -1598,32 +1967,198 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 	signed_by = (invoice.signed_by_name or "").strip() or "-"
 	signed_at = timezone.localtime(invoice.signed_at).strftime("%Y-%m-%d %H:%M") if invoice.signed_at else "-"
 
+	# Build TO/FROM blocks as flowables.
+	blank = ""
+	client_obj = getattr(invoice, "client", None)
+	address = (getattr(client_obj, "physical_address", "") or "").strip()
+	contact_person = (getattr(client_obj, "contact_person", "") or "").strip()
+	phone = (getattr(client_obj, "phone", "") or "").strip()
+	email = (getattr(client_obj, "email", "") or "").strip()
+	if phone and email:
+		phone_email_line = f"{phone} / {email}"
+	elif phone:
+		phone_email_line = phone
+	elif email:
+		phone_email_line = email
+	else:
+		phone_email_line = blank
+
+	label_style = ParagraphStyle(
+		"pdf_kv_label",
+		parent=styles["Normal"],
+		fontName=base_font_bold,
+		fontSize=9,
+		leading=11,
+		textColor=colors.HexColor("#0f172a"),
+	)
+	value_style = ParagraphStyle(
+		"pdf_kv_value",
+		parent=styles["Normal"],
+		fontName=base_font,
+		fontSize=9,
+		leading=11,
+		textColor=colors.HexColor("#0f172a"),
+	)
+
+	def _kv_row(label: str, value: str) -> list[object]:
+		label_txt = (label or "").strip().upper() + ":"
+		return [Paragraph(label_txt, label_style), Paragraph(value or blank, value_style)]
+
+	# Keep TO compact: each parameter on the same line with its value.
+	to_kv = Table(
+		[
+			_kv_row("Client Name", client_name),
+			_kv_row("Address", address),
+			_kv_row("Contact Person", contact_person),
+			_kv_row("Phone", phone),
+			_kv_row("Email", email),
+		],
+		colWidths=[28 * mm, float(doc.width) * 0.5 - 28 * mm],
+	)
+	to_kv.setStyle(
+		TableStyle(
+			[
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+				("RIGHTPADDING", (0, 0), (0, -1), 6),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+			]
+		)
+	)
+	gutter_w = 14 * mm
+	to_w = (float(doc.width) - gutter_w) / 2.0
+	from_w = (float(doc.width) - gutter_w) / 2.0
+	from_kv = Table(
+		[
+			_kv_row("Company", "JAMBAS IMAGING (U) LTD"),
+			_kv_row("Address", "F-26, Nasser Road Mall, Kampala – Uganda"),
+			_kv_row("Tel", "+256 200 902 849"),
+			_kv_row("Email", "info@jambasimaging.com"),
+			_kv_row("Website", "www.jambasimaging.com"),
+		],
+		colWidths=[28 * mm, from_w - 28 * mm],
+	)
+	from_kv.setStyle(
+		TableStyle(
+			[
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+				("RIGHTPADDING", (0, 0), (0, -1), 6),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+			]
+		)
+	)
+
+	to_from_table = Table(
+		[
+			["TO", "", "FROM"],
+			[to_kv, "", from_kv],
+		],
+		# Span full available width so the blue header bar aligns with other tables.
+		colWidths=[to_w, gutter_w, from_w],
+	)
+	# Style the TO/FROM table: blue header, white text; no vertical separators.
+	to_from_table.setStyle(
+		TableStyle(
+			[
+				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
+				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("ALIGN", (0, 0), (0, 0), "LEFT"),
+				("ALIGN", (2, 0), (2, 0), "LEFT"),
+				("LEFTPADDING", (0, 0), (0, -1), 6),
+				("RIGHTPADDING", (0, 0), (0, -1), 6),
+				("LEFTPADDING", (1, 0), (1, -1), 0),
+				("RIGHTPADDING", (1, 0), (1, -1), 0),
+				("LEFTPADDING", (2, 0), (2, -1), 6),
+				("RIGHTPADDING", (2, 0), (2, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 6),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+				("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+				("LINEBELOW", (0, 0), (-1, 0), 0.8, colors.HexColor("#0d6efd")),
+			]
+		)
+	)
+
+	meta_table = Table(
+		[
+			["PREPARED BY", "ISSUED DATE       |       DUE DATE"],
+			[prepared_by, f"{issued}       |       {due}"],
+		],
+		colWidths=[doc.width * 0.45, doc.width * 0.55],
+	)
+	meta_table.setStyle(
+		TableStyle(
+			[
+				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
+				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("ALIGN", (0, 0), (-1, 0), "LEFT"),
+				("LEFTPADDING", (0, 0), (-1, -1), 6),
+				("RIGHTPADDING", (0, 0), (-1, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 4),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+			]
+		)
+	)
+
+	# Create header table with document type on left and number on right
+	header_table = Table(
+		[
+			["INVOICE", f"No. {invoice.number}"],
+		],
+		colWidths=[doc.width * 0.5, doc.width * 0.5],
+	)
+	header_table.setStyle(
+		TableStyle(
+			[
+				("ALIGN", (0, 0), (0, 0), "LEFT"),
+				("ALIGN", (1, 0), (1, 0), "RIGHT"),
+				("FONTNAME", (0, 0), (-1, -1), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, -1), 14),
+				("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+			]
+		)
+	)
+
 	elements = [
-		Paragraph(f"Invoice {invoice.number}", styles["Title"]),
+		header_table,
 		Spacer(1, 8),
-		_pdf_kv_table(
-			styles=styles,
-			left_rows=[
-				("Client", client_name),
-				("Email", client_email),
-				("Prepared by", prepared_by),
-			],
-			right_rows=[
-				("Issued", issued),
-				("Due", due),
-				("Signed", f"{signed_by} ({signed_at})" if signed_by != "-" else "-"),
-			],
-		),
+		to_from_table,
+		Spacer(1, 20),
+		meta_table,
 		Spacer(1, 12),
 	]
 
 	items = list(invoice.items.all())
 	rows: list[list[object]] = []
 	for it in items:
+		item_name = "Item"
+		try:
+			if getattr(it, "product", None) is not None:
+				item_name = str(getattr(it.product, "name", None) or it.description or "Item")
+			elif getattr(it, "service", None) is not None:
+				item_name = str(getattr(it.service, "name", None) or it.description or "Service")
+		except Exception:
+			item_name = "Item"
 		desc = (it.description or "-")
 		rows.append(
 			[
-				Paragraph(desc, item_style),
+				Paragraph(str(item_name), item_style),
+				Paragraph(str(desc), item_style),
 				Paragraph(str(it.quantity), item_style),
 				Paragraph(_money(it.unit_price), item_style),
 				Paragraph(_money(it.line_total()), item_style),
@@ -1631,25 +2166,30 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 		)
 
 	if not rows:
-		rows = [["(No items)", "-", "-", "-"]]
+		rows = [["(No items)", "-", "-", "-", "-"]]
 
-	data = [["Description", "Qty", "Unit Price", "Line Total"]] + rows
-	table = Table(data, repeatRows=1, colWidths=[92 * mm, 16 * mm, 35 * mm, 35 * mm])
+	data = [["Item", "Description", "Qty", "Unit Price", "Amount"]] + rows
+	item_w = 35 * mm
+	qty_w = 25 * mm
+	unit_w = 27 * mm
+	amt_w = 27 * mm
+	desc_w = max(40 * mm, float(doc.width) - (item_w + qty_w + unit_w + amt_w))
+	item_col_widths = [item_w, desc_w, qty_w, unit_w, amt_w]
+	table = Table(data, repeatRows=1, colWidths=item_col_widths)
 	table.setStyle(
 		TableStyle(
 			[
 				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
 				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-				("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
 				("FONTSIZE", (0, 0), (-1, 0), 10),
-				("ALIGN", (1, 1), (1, -1), "RIGHT"),
-				("ALIGN", (2, 1), (-1, -1), "RIGHT"),
+				("ALIGN", (2, 1), (2, -1), "CENTER"),
+				("ALIGN", (3, 1), (4, -1), "RIGHT"),
 				("LEFTPADDING", (0, 0), (-1, -1), 6),
 				("RIGHTPADDING", (0, 0), (-1, -1), 6),
 				("TOPPADDING", (0, 0), (-1, -1), 4),
 				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-				("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-				("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
+				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
 				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 			]
 		)
@@ -1657,31 +2197,72 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 	elements.append(table)
 
 	amount_rows = [
-		["Subtotal", f"{invoice.currency} {_money(invoice.subtotal())}"],
-		["VAT", f"{invoice.currency} {_money(invoice.vat_amount())}"],
-		["Total", f"{invoice.currency} {_money(invoice.total())}"],
+		["Sub total", f"{invoice.currency} {_money(invoice.subtotal())}"],
+		["VAT 18%", f"{invoice.currency} {_money(invoice.vat_amount())}"],
+		["TOTAL", f"{invoice.currency} {_money(invoice.total())}"],
 	]
-	amount_table = Table(amount_rows, colWidths=[70 * mm, 50 * mm], hAlign="RIGHT")
+	amount_data = [["Summary", "Amount"]] + amount_rows
+	amount_table = Table(
+		amount_data,
+		colWidths=[item_col_widths[2] + item_col_widths[3], item_col_widths[4]],
+	)
 	amount_table.setStyle(
 		TableStyle(
 			[
-				("ALIGN", (0, 0), (-1, -1), "RIGHT"),
-				("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-				("FONTSIZE", (0, 0), (-1, -1), 10),
-				("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
-				("TOPPADDING", (0, 0), (-1, -1), 3),
-				("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-				("LINEABOVE", (0, -1), (-1, -1), 0.8, colors.HexColor("#0d6efd")),
+				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
+				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
+				("LEFTPADDING", (0, 0), (-1, -1), 6),
+				("RIGHTPADDING", (0, 0), (-1, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 4),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+				("ALIGN", (0, 1), (0, -1), "LEFT"),
+				("ALIGN", (1, 1), (1, -1), "RIGHT"),
+				("FONTNAME", (0, 1), (0, -1), base_font_bold),
+				("FONTNAME", (0, -1), (-1, -1), base_font_bold),
+				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 			]
 		)
 	)
-	elements += [Spacer(1, 12), amount_table]
-	if invoice.notes:
-		elements += [
-			Spacer(1, 10),
-			Paragraph("Notes", styles["pdf_section"]),
-			Paragraph(invoice.notes, styles["Normal"]),
-		]
+	amount_wrap = Table(
+		[["", amount_table]],
+		colWidths=[item_col_widths[0] + item_col_widths[1], item_col_widths[2] + item_col_widths[3] + item_col_widths[4]],
+	)
+	amount_wrap.setStyle(
+		TableStyle(
+			[
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+			]
+		)
+	)
+	elements += [Spacer(1, 12), amount_wrap]
+
+	standard_terms_html = _default_notes_html()
+	notes_text = (invoice.notes or "").strip()
+	if not notes_text:
+		notes_text = standard_terms_html
+	else:
+		# Always include the standard terms even when custom notes exist.
+		# Avoid duplicating if someone already pasted them into invoice.notes.
+		marker = "system-generated invoice"
+		if marker not in notes_text.lower():
+			notes_text = notes_text + "<br/><br/>" + standard_terms_html
+	# Render notes (either user-provided or defaults) at the bottom above the footer.
+	elements += [
+		Spacer(1, 12),
+		_BottomAlignedFlowables(
+			[
+				Paragraph("Notes / Terms", styles["pdf_section"]),
+				Paragraph(notes_text, note_style),
+			]
+		),
+	]
 
 	doc.build(
 		elements,
@@ -1693,72 +2274,379 @@ def _build_invoice_pdf_bytes(invoice) -> bytes:
 	return pdf_bytes
 
 
-def _build_receipt_pdf_bytes(payment) -> bytes:
-	"""Generate a simple receipt PDF for a payment."""
-	invoice = payment.invoice
+def _build_receipt_pdf_bytes(payment, *, issued_by: str | None = None) -> bytes:
+	from reportlab.lib.units import mm
+
 	buffer = BytesIO()
-	title = f"Receipt {payment.receipt_number}"
+	title = payment.receipt_number
 	doc = SimpleDocTemplate(
 		buffer,
-		pagesize=A5,
+		pagesize=A4,
 		title=title,
-		topMargin=76,
-		bottomMargin=56,
-		leftMargin=28,
-		rightMargin=28,
+		topMargin=90,
+		bottomMargin=72,
+		leftMargin=36,
+		rightMargin=36,
 	)
 	styles = getSampleStyleSheet()
+	base_font, base_font_bold = _pdf_setup_fonts(styles)
+	styles["Title"].textColor = colors.HexColor("#0f172a")
+	styles.add(
+		ParagraphStyle(
+			"pdf_section",
+			parent=styles["Heading3"],
+			textColor=colors.HexColor("#0f172a"),
+			spaceBefore=8,
+			spaceAfter=4,
+		)
+	)
+	item_style = ParagraphStyle(
+		"pdf_item",
+		parent=styles["Normal"],
+		fontName=base_font,
+		fontSize=9.5,
+		leading=11,
+		textColor=colors.HexColor("#0f172a"),
+	)
+	note_style = ParagraphStyle(
+		"pdf_notes",
+		parent=styles["Normal"],
+		fontName=base_font,
+		fontSize=10,
+		leading=14,
+		textColor=colors.HexColor("#0f172a"),
+	)
 
-	paid_at = timezone.localtime(payment.paid_at).strftime("%Y-%m-%d %H:%M")
+	def _default_notes_html() -> str:
+		payment_methods = (
+			"Payment methods accepted: <b>Bank</b>, <b>Mobile Money</b>, and <b>Cash</b>. "
+			"Please quote the document number on all payments for easy tracking."
+		)
+		sep = "<br/><br/>"
+		lines = [
+			"• Thank you for your business.",
+			"• Goods once sold are not returnable.",
+			"• This receipt confirms payment received for the invoice listed.",
+			"• All payments are subject to verification and reconciliation.",
+			"• Refunds are processed within 21 days of payment date.",
+			f"• {payment_methods}",
+		]
+		return sep.join(lines)
+
+	invoice = payment.invoice
+	client_name = str(invoice.client)
+	client_email = getattr(invoice.client, "email", "") or "-"
+	issued_by_name = (issued_by or "").strip()
+	if not issued_by_name:
+		recorder = getattr(payment, "recorded_by", None)
+		issued_by_name = (
+			(getattr(recorder, "get_full_name", lambda: "")() if recorder else "")
+			or (getattr(recorder, "email", "") if recorder else "")
+			or "JAMBAS IMAGING (U) LTD"
+		)
+	paid_date = timezone.localtime(payment.paid_at).date().isoformat() if payment.paid_at else "-"
+	receipt_number = payment.receipt_number or "-"
+
+	blank = ""
+	client_obj = getattr(invoice, "client", None)
+	address = (getattr(client_obj, "physical_address", "") or "").strip()
+	contact_person = (getattr(client_obj, "contact_person", "") or "").strip()
+	phone = (getattr(client_obj, "phone", "") or "").strip()
+	email = (getattr(client_obj, "email", "") or "").strip()
+	if phone and email:
+		phone_email_line = f"{phone} / {email}"
+	elif phone:
+		phone_email_line = phone
+	elif email:
+		phone_email_line = email
+	else:
+		phone_email_line = blank
+
+
+	label_style = ParagraphStyle(
+		"pdf_kv_label",
+		parent=styles["Normal"],
+		fontName=base_font_bold,
+		fontSize=9,
+		leading=11,
+		textColor=colors.HexColor("#0f172a"),
+	)
+	value_style = ParagraphStyle(
+		"pdf_kv_value",
+		parent=styles["Normal"],
+		fontName=base_font,
+		fontSize=9,
+		leading=11,
+		textColor=colors.HexColor("#0f172a"),
+	)
+
+	def _kv_row(label: str, value: str) -> list[object]:
+		label_txt = (label or "").strip().upper() + ":"
+		return [Paragraph(label_txt, label_style), Paragraph(value or blank, value_style)]
+
+	# Keep TO compact: each parameter on the same line with its value.
+	to_kv = Table(
+		[
+			_kv_row("Client Name", client_name),
+			_kv_row("Address", address),
+			_kv_row("Contact Person", contact_person),
+			_kv_row("Phone", phone),
+			_kv_row("Email", email),
+		],
+		colWidths=[28 * mm, float(doc.width) * 0.5 - 28 * mm],
+	)
+	to_kv.setStyle(
+		TableStyle(
+			[
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+				("RIGHTPADDING", (0, 0), (0, -1), 6),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+			]
+		)
+	)
+	gutter_w = 14 * mm
+	to_w = (float(doc.width) - gutter_w) / 2.0
+	from_w = (float(doc.width) - gutter_w) / 2.0
+	from_kv = Table(
+		[
+			_kv_row("Company", "JAMBAS IMAGING (U) LTD"),
+			_kv_row("Address", "F-26, Nasser Road Mall, Kampala – Uganda"),
+			_kv_row("Tel", "+256 200 902 849"),
+			_kv_row("Email", "info@jambasimaging.com"),
+			_kv_row("Website", "www.jambasimaging.com"),
+		],
+		colWidths=[28 * mm, from_w - 28 * mm],
+	)
+	from_kv.setStyle(
+		TableStyle(
+			[
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+				("RIGHTPADDING", (0, 0), (0, -1), 6),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+			]
+		)
+	)
+
+	to_from_table = Table(
+		[
+			["TO", "", "FROM"],
+			[to_kv, "", from_kv],
+		],
+		# Span full available width so the blue header bar aligns with other tables.
+		colWidths=[to_w, gutter_w, from_w],
+	)
+	# Style the TO/FROM table: blue header, white text; no vertical separators.
+	to_from_table.setStyle(
+		TableStyle(
+			[
+				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
+				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("ALIGN", (0, 0), (0, 0), "LEFT"),
+				("ALIGN", (2, 0), (2, 0), "LEFT"),
+				("LEFTPADDING", (0, 0), (0, -1), 6),
+				("RIGHTPADDING", (0, 0), (0, -1), 6),
+				("LEFTPADDING", (1, 0), (1, -1), 0),
+				("RIGHTPADDING", (1, 0), (1, -1), 0),
+				("LEFTPADDING", (2, 0), (2, -1), 6),
+				("RIGHTPADDING", (2, 0), (2, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 6),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+				("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+				("LINEBELOW", (0, 0), (-1, 0), 0.8, colors.HexColor("#0d6efd")),
+			]
+		)
+	)
+
+	meta_table = Table(
+		[
+			["ISSUED BY", "PAID DATE"],
+			[issued_by_name, paid_date],
+		],
+		colWidths=[doc.width * 0.45, doc.width * 0.55],
+	)
+	meta_table.setStyle(
+		TableStyle(
+			[
+				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
+				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("ALIGN", (0, 0), (-1, 0), "LEFT"),
+				("LEFTPADDING", (0, 0), (-1, -1), 6),
+				("RIGHTPADDING", (0, 0), (-1, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 4),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+			]
+		)
+	)
+
+	# Create header table with document type on left and number on right
+	header_table = Table(
+		[
+			["RECEIPT", f"No. {receipt_number}"],
+		],
+		colWidths=[doc.width * 0.5, doc.width * 0.5],
+	)
+	header_table.setStyle(
+		TableStyle(
+			[
+				("ALIGN", (0, 0), (0, 0), "LEFT"),
+				("ALIGN", (1, 0), (1, 0), "RIGHT"),
+				("FONTNAME", (0, 0), (-1, -1), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, -1), 14),
+				("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#0f172a")),
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+			]
+		)
+	)
 
 	elements = [
-		Paragraph(f"Receipt {payment.receipt_number}", styles["Title"]),
-		Spacer(1, 6),
-		_pdf_kv_table(
-			styles=styles,
-			left_rows=[
-				("Invoice", str(invoice.number or "-")),
-				("Client", str(invoice.client or "-")),
-			],
-			right_rows=[
-				("Paid at", paid_at),
-				("Method", str(payment.method_label or "-")),
-				("Reference", str(payment.reference or "-")),
-			],
-		),
-		Spacer(1, 10),
+		header_table,
+		Spacer(1, 8),
+		to_from_table,
+		Spacer(1, 20),
+		meta_table,
+		Spacer(1, 12),
 	]
 
-	from reportlab.lib.units import mm
-	data = [
-		["Summary", "Amount"],
-		["Payment", f"{invoice.currency} {_money(payment.amount)}"],
-		["Invoice Total", f"{invoice.currency} {_money(invoice.total())}"],
-		["Total Paid", f"{invoice.currency} {_money(invoice.amount_paid())}"],
-		["Outstanding", f"{invoice.currency} {_money(invoice.outstanding_balance())}"],
-	]
-	table = Table(data, repeatRows=1, colWidths=[85 * mm, 45 * mm])
+	items = list(invoice.items.all())
+	rows: list[list[object]] = []
+	for it in items:
+		item_name = "Item"
+		try:
+			if getattr(it, "product", None) is not None:
+				item_name = str(getattr(it.product, "name", None) or it.description or "Item")
+			elif getattr(it, "service", None) is not None:
+				item_name = str(getattr(it.service, "name", None) or it.description or "Service")
+		except Exception:
+			item_name = "Item"
+		desc = (it.description or "-")
+		rows.append(
+			[
+				Paragraph(str(item_name), item_style),
+				Paragraph(str(desc), item_style),
+				Paragraph(str(it.quantity), item_style),
+				Paragraph(_money(it.unit_price), item_style),
+				Paragraph(_money(it.line_total()), item_style),
+			]
+		)
+	if not rows:
+		rows = [[Paragraph("(No items)", item_style), "-", "-", "-", "-"]]
+
+	data = [["Item", "Description", "Qty", "Unit Price", "Amount"]] + rows
+	item_w = 35 * mm
+	qty_w = 25 * mm
+	unit_w = 27 * mm
+	amt_w = 27 * mm
+	# Make the table span the full available width to keep vertical grid lines
+	# perfectly aligned with other right-aligned tables.
+	desc_w = max(40 * mm, float(doc.width) - (item_w + qty_w + unit_w + amt_w))
+	item_col_widths = [item_w, desc_w, qty_w, unit_w, amt_w]
+	table = Table(data, repeatRows=1, colWidths=item_col_widths)
 	table.setStyle(
 		TableStyle(
 			[
 				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
 				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-				("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-				("ALIGN", (1, 1), (1, -1), "RIGHT"),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("ALIGN", (2, 1), (2, -1), "CENTER"),
+				("ALIGN", (3, 1), (4, -1), "RIGHT"),
 				("LEFTPADDING", (0, 0), (-1, -1), 6),
 				("RIGHTPADDING", (0, 0), (-1, -1), 6),
 				("TOPPADDING", (0, 0), (-1, -1), 4),
 				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-				("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-				("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.lightgrey]),
+				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
 				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 			]
 		)
 	)
 	elements.append(table)
 
-	if payment.notes:
-		elements += [Spacer(1, 10), Paragraph("Notes:", styles["Heading4"]), Paragraph(payment.notes, styles["Normal"])]
+	# For receipt, summary includes payment details
+	amount_rows: list[list[str]] = [
+		["Invoice Total", f"{invoice.currency} {_money(invoice.total())}"],
+		["Payment Amount", f"{invoice.currency} {_money(payment.amount)}"],
+		["Total Paid", f"{invoice.currency} {_money(invoice.amount_paid())}"],
+		["Outstanding", f"{invoice.currency} {_money(invoice.outstanding_balance())}"],
+	]
+
+	amount_data = [["Summary", "Amount"]] + amount_rows
+	amount_table = Table(
+		amount_data,
+		colWidths=[item_col_widths[2] + item_col_widths[3], item_col_widths[4]],
+	)
+	amount_table.setStyle(
+		TableStyle(
+			[
+				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
+				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
+				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
+				("LEFTPADDING", (0, 0), (-1, -1), 6),
+				("RIGHTPADDING", (0, 0), (-1, -1), 6),
+				("TOPPADDING", (0, 0), (-1, -1), 4),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+				("ALIGN", (0, 1), (0, -1), "LEFT"),
+				("ALIGN", (1, 1), (1, -1), "RIGHT"),
+				("FONTNAME", (0, 1), (0, -1), base_font_bold),
+				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+			]
+		)
+	)
+	amount_wrap = Table(
+		[["", amount_table]],
+		colWidths=[item_col_widths[0] + item_col_widths[1], item_col_widths[2] + item_col_widths[3] + item_col_widths[4]],
+	)
+	amount_wrap.setStyle(
+		TableStyle(
+			[
+				("LEFTPADDING", (0, 0), (-1, -1), 0),
+				("RIGHTPADDING", (0, 0), (-1, -1), 0),
+				("TOPPADDING", (0, 0), (-1, -1), 0),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
+			]
+		)
+	)
+	elements += [Spacer(1, 12), amount_wrap]
+
+	notes_text = (payment.notes or "").strip()
+	if not notes_text:
+		notes_text = _default_notes_html()
+	else:
+		extra_terms: list[str] = []
+		if "Thank you" not in notes_text:
+			extra_terms.append("• Thank you for your business.")
+		if "not returnable" not in notes_text.lower():
+			extra_terms.append("• Goods once sold are not returnable.")
+		if extra_terms:
+			notes_text = notes_text + "<br/><br/>" + "<br/><br/>".join(extra_terms)
+	# Render notes (either user-provided or defaults) at the bottom above the footer.
+	elements += [
+		Spacer(1, 12),
+		_BottomAlignedFlowables(
+			[
+				Paragraph("Notes / Terms", styles["pdf_section"]),
+				Paragraph(notes_text, note_style),
+			]
+		),
+	]
 
 	doc.build(
 		elements,
@@ -1768,7 +2656,6 @@ def _build_receipt_pdf_bytes(payment) -> bytes:
 	pdf_bytes = buffer.getvalue()
 	buffer.close()
 	return pdf_bytes
-
 
 @login_required
 def invoice_detail(request, invoice_id: int):
@@ -1801,6 +2688,10 @@ def invoice_detail(request, invoice_id: int):
 
 	payment_form = PaymentForm(invoice=invoice)
 	signature_form = InvoiceSignatureForm(initial={"name": invoice.signed_by_name or ""})
+	if not (invoice.signed_by_name or "").strip():
+		shift_signed = (request.session.get("signed_by_name") or "").strip()
+		if shift_signed:
+			signature_form = InvoiceSignatureForm(initial={"name": shift_signed})
 	context = {
 		"invoice": invoice,
 		"items": invoice.items.all(),
@@ -1907,7 +2798,11 @@ def sign_invoice(request, invoice_id: int):
 
 	form = InvoiceSignatureForm(request.POST)
 	if form.is_valid():
-		name = (form.cleaned_data["name"] or "").strip()
+		shift_name = (request.session.get("signed_by_name") or "").strip()
+		name = shift_name or (form.cleaned_data.get("name") or "").strip()
+		if not name:
+			messages.error(request, "Please set Approved by in Shift Identity.")
+			return redirect("invoice_detail", invoice_id=invoice_id)
 		invoice.signed_by_name = name
 		invoice.signed_at = timezone.now() if name else None
 		invoice.save(update_fields=["signed_by_name", "signed_at"])
@@ -1915,7 +2810,7 @@ def sign_invoice(request, invoice_id: int):
 			invoice.deduct_stock_if_needed()
 		except Exception:
 			pass
-		messages.success(request, "Invoice signed.")
+		messages.success(request, "Invoice approved.")
 	return redirect("invoice_detail", invoice_id=invoice_id)
 
 
@@ -2014,7 +2909,8 @@ def payment_receipt_pdf(request, invoice_id: int, payment_id: int):
 	from invoices.models import Payment
 
 	payment = Payment.objects.select_related("invoice", "invoice__client").get(pk=payment_id, invoice_id=invoice_id)
-	pdf_bytes = _build_receipt_pdf_bytes(payment)
+	shift_issued = (request.session.get("issued_by_name") or request.session.get("prepared_by_name") or "").strip() or None
+	pdf_bytes = _build_receipt_pdf_bytes(payment, issued_by=shift_issued)
 	client_label = str(payment.invoice.client).replace(" ", "_")[:40] if payment.invoice and payment.invoice.client else "Client"
 	reference = payment.receipt_number or str(payment.pk)
 	filename = f"Receipt_{client_label}_{reference}.pdf"
@@ -2046,7 +2942,8 @@ def send_payment_receipt(request, invoice_id: int, payment_id: int):
 		messages.error(request, "Client does not have an email address.")
 		return redirect("invoice_detail", invoice_id=invoice_id)
 
-	pdf_bytes = _build_receipt_pdf_bytes(payment)
+	shift_issued = (request.session.get("issued_by_name") or request.session.get("prepared_by_name") or "").strip() or None
+	pdf_bytes = _build_receipt_pdf_bytes(payment, issued_by=shift_issued)
 	subject = f"Receipt {payment.receipt_number or payment.pk} for Invoice {payment.invoice.number}"
 	body = (
 		f"Dear {payment.invoice.client},\n\n"
@@ -3428,6 +4325,9 @@ def users_view(request):
 
 	User = get_user_model()
 	users = User.objects.all().order_by("email")
+	# Managing Director cannot see admin/superusers.
+	if not getattr(request.user, "is_superuser", False) and _role(request.user) == "managing_director":
+		users = users.exclude(role="admin").exclude(is_superuser=True)
 	return render(request, "modules/users.html", {"users": users})
 
 
@@ -3440,8 +4340,21 @@ def add_user(request):
 	from accounts.forms import AdminUserCreateForm
 
 	form = AdminUserCreateForm(request.POST or None)
+	# Managing Director cannot create admin users.
+	if not getattr(request.user, "is_superuser", False) and _role(request.user) == "managing_director":
+		try:
+			form.fields["role"].choices = [c for c in form.fields["role"].choices if c[0] != "admin"]
+		except Exception:
+			pass
 	if request.method == "POST" and form.is_valid():
-		form.save()
+		user_obj = form.save(commit=False)
+		if not getattr(request.user, "is_superuser", False) and _role(request.user) == "managing_director":
+			if getattr(user_obj, "role", None) == "admin" or getattr(user_obj, "is_superuser", False):
+				messages.error(request, "You cannot create an Admin user.")
+				return render(request, "modules/add_user.html", {"form": form})
+			user_obj.is_staff = False
+			user_obj.is_superuser = False
+		user_obj.save()
 		messages.success(request, "User created successfully.")
 		return redirect("users")
 	return render(request, "modules/add_user.html", {"form": form})
@@ -3461,12 +4374,64 @@ def edit_user(request, user_id: int):
 		messages.error(request, "User not found.")
 		return redirect("users")
 
+	# Managing Director cannot access admin/superuser accounts.
+	if not getattr(request.user, "is_superuser", False) and _role(request.user) == "managing_director":
+		if getattr(user_obj, "is_superuser", False) or getattr(user_obj, "role", None) == "admin":
+			messages.error(request, "User not found.")
+			return redirect("users")
+
 	form = AdminUserUpdateForm(request.POST or None, instance=user_obj)
+	# Managing Director cannot promote users to Admin.
+	if not getattr(request.user, "is_superuser", False) and _role(request.user) == "managing_director":
+		try:
+			form.fields["role"].choices = [c for c in form.fields["role"].choices if c[0] != "admin"]
+		except Exception:
+			pass
 	if request.method == "POST" and form.is_valid():
-		form.save()
+		updated = form.save(commit=False)
+		if not getattr(request.user, "is_superuser", False) and _role(request.user) == "managing_director":
+			if getattr(updated, "role", None) == "admin" or getattr(updated, "is_superuser", False):
+				messages.error(request, "You cannot modify an Admin user.")
+				return render(request, "modules/edit_user.html", {"form": form, "user_obj": user_obj})
+		updated.save()
 		messages.success(request, "User updated successfully.")
 		return redirect("users")
 	return render(request, "modules/edit_user.html", {"form": form, "user_obj": user_obj})
+
+
+@login_required
+def delete_user(request, user_id: int):
+	guard = _require_admin(request)
+	if guard is not None:
+		return guard
+
+	if request.method != "POST":
+		return redirect("users")
+
+	User = get_user_model()
+	user_obj = User.objects.filter(id=user_id).first()
+	if user_obj is None:
+		messages.error(request, "User not found.")
+		return redirect("users")
+
+	if user_obj.id == request.user.id:
+		messages.error(request, "You cannot delete your own account.")
+		return redirect("users")
+
+	# Managing Director cannot delete admin/superusers.
+	if not getattr(request.user, "is_superuser", False) and _role(request.user) == "managing_director":
+		if getattr(user_obj, "is_superuser", False) or getattr(user_obj, "role", None) == "admin":
+			messages.error(request, "You cannot delete an Admin user.")
+			return redirect("users")
+
+	# Never delete superusers from the portal UI.
+	if getattr(user_obj, "is_superuser", False):
+		messages.error(request, "You cannot delete an Admin user.")
+		return redirect("users")
+
+	user_obj.delete()
+	messages.success(request, "User deleted successfully.")
+	return redirect("users")
 
 
 @login_required
@@ -3489,6 +4454,165 @@ def audit_logs_view(request):
 		logins = []
 		messages.warning(request, "Login audit is temporarily unavailable.")
 	return render(request, "modules/audit_logs.html", {"events": events, "logins": logins})
+
+
+@login_required
+def global_search(request):
+	"""Global search across all modules in the system."""
+	query = request.GET.get('q', '').strip()
+	results = {
+		'clients': [],
+		'invoices': [],
+		'receipts': [],
+		'quotations': [],
+		'appointments': [],
+		'services': [],
+		'inventory': [],
+		'expenses': [],
+		'documents': [],
+		'sales': [],
+		'reports': [],
+	}
+
+	if query:
+		from clients.models import Client
+		from invoices.models import Invoice, Payment
+		from sales.models import Quotation
+		from appointments.models import Appointment
+		from services.models import Service
+		from inventory.models import Product
+		from expenses.models import Expense
+		from documents.models import Document
+		from reports.models import ProfitRecord
+
+		# Search clients
+		try:
+			results['clients'] = Client.objects.filter(
+				Q(full_name__icontains=query) |
+				Q(company_name__icontains=query) |
+				Q(email__icontains=query) |
+				Q(phone__icontains=query) |
+				Q(contact_person__icontains=query)
+			)[:10]
+		except Exception:
+			results['clients'] = []
+
+		# Search invoices
+		try:
+			results['invoices'] = Invoice.objects.filter(
+				Q(number__icontains=query) |
+				Q(client__full_name__icontains=query) |
+				Q(client__company_name__icontains=query) |
+				Q(notes__icontains=query)
+			).select_related('client')[:10]
+		except Exception:
+			results['invoices'] = []
+
+		# Search receipts
+		try:
+			results['receipts'] = Payment.objects.filter(
+				Q(receipt_number__icontains=query) |
+				Q(invoice__client__full_name__icontains=query) |
+				Q(invoice__client__company_name__icontains=query) |
+				Q(reference__icontains=query) |
+				Q(notes__icontains=query)
+			).select_related('invoice__client')[:10]
+		except Exception:
+			results['receipts'] = []
+
+		# Search quotations
+		try:
+			results['quotations'] = Quotation.objects.filter(
+				Q(number__icontains=query) |
+				Q(client__full_name__icontains=query) |
+				Q(client__company_name__icontains=query) |
+				Q(notes__icontains=query)
+			).select_related('client')[:10]
+		except Exception:
+			results['quotations'] = []
+
+		# Search appointments
+		try:
+			results['appointments'] = Appointment.objects.filter(
+				Q(notes__icontains=query) |
+				Q(appointment_type__icontains=query) |
+				Q(status__icontains=query) |
+				Q(meeting_mode__icontains=query) |
+				Q(client__full_name__icontains=query) |
+				Q(client__company_name__icontains=query) |
+				Q(assigned_to__email__icontains=query)
+			).select_related('client')[:10]
+		except Exception:
+			results['appointments'] = []
+
+		# Search services
+		try:
+			results['services'] = Service.objects.filter(
+				Q(name__icontains=query) |
+				Q(description__icontains=query) |
+				Q(category__name__icontains=query)
+			)[:10]
+		except Exception:
+			results['services'] = []
+
+		# Search inventory
+		try:
+			results['inventory'] = Product.objects.filter(
+				Q(name__icontains=query) |
+				Q(description__icontains=query) |
+				Q(category__name__icontains=query) |
+				Q(category__category_type__icontains=query) |
+				Q(sku__icontains=query)
+			)[:10]
+		except Exception:
+			results['inventory'] = []
+
+		# Search expenses
+		try:
+			results['expenses'] = Expense.objects.filter(
+				Q(description__icontains=query) |
+				Q(category__icontains=query) |
+				Q(reference__icontains=query)
+			)[:10]
+		except Exception:
+			results['expenses'] = []
+
+		# Search documents
+		try:
+			results['documents'] = Document.objects.filter(
+				Q(title__icontains=query) |
+				Q(notes__icontains=query) |
+				Q(doc_type__icontains=query) |
+				Q(doc_type_other__icontains=query) |
+				Q(client__full_name__icontains=query) |
+				Q(client__company_name__icontains=query)
+			)[:10]
+		except Exception:
+			results['documents'] = []
+
+		# Sales: no standalone Sale model in this project; keep the section empty.
+		results['sales'] = []
+
+		# Reports (profit records)
+		try:
+			results['reports'] = ProfitRecord.objects.filter(
+				Q(invoice__number__icontains=query) |
+				Q(invoice__client__full_name__icontains=query) |
+				Q(invoice__client__company_name__icontains=query)
+			).select_related('invoice', 'invoice__client')[:10]
+		except Exception:
+			results['reports'] = []
+
+	# Count total results
+	total_results = sum(len(results[category]) for category in results)
+
+	context = {
+		'query': query,
+		'results': results,
+		'total_results': total_results,
+	}
+
+	return render(request, 'modules/global_search.html', context)
 
 
 # Backwards-compatible alias (older code referenced `dashboard`)

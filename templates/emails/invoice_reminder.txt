@@ -1,0 +1,32 @@
+{{ company_name }}
+Payment Reminder
+
+Dear {{ client.company_name|default:client.full_name }},
+
+This is a friendly reminder that payment for the following invoice is due:
+
+Invoice: {{ invoice.number }}
+Issue Date: {{ invoice.issued_at|date:"M d, Y" }}
+Due Date: {{ due_date|date:"M d, Y" }}
+Outstanding Amount: {{ invoice.currency }} {{ outstanding_amount|floatformat:2 }}
+
+Please ensure payment is made by the due date to avoid any late fees or service interruptions.
+
+Payment Methods:
+- Bank Transfer
+- Mobile Money
+- Cash
+
+Please quote the invoice number ({{ invoice.number }}) on all payments for easy tracking.
+
+If you have already made the payment, please disregard this reminder.
+
+Thank you for your business!
+
+Best regards,
+{{ company_name }}
+Accounts Department
+
+---
+This is an automated reminder. Please do not reply to this email.
+For any queries, contact us at info@jambasimaging.com

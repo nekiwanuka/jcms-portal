@@ -18,7 +18,15 @@ class InvoiceForm(forms.ModelForm):
 
 	class Meta:
 		model = Invoice
-		exclude = ["number", "created_by", "created_at", "updated_at", "signed_by_name", "signed_at"]
+		exclude = [
+			"number",
+			"created_by",
+			"created_at",
+			"updated_at",
+			"prepared_by_name",
+			"signed_by_name",
+			"signed_at",
+		]
 		widgets = {
 			"issued_at": forms.DateInput(attrs={"type": "date"}),
 			"due_at": forms.DateInput(attrs={"type": "date"}),
@@ -135,7 +143,7 @@ class InvoiceItemForm(forms.ModelForm):
 
 
 class InvoiceSignatureForm(forms.Form):
-	name = forms.CharField(max_length=120)
+	name = forms.CharField(max_length=120, required=False)
 
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)

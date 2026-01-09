@@ -41,16 +41,16 @@
           <form method="post" action="{% url 'sign_invoice' invoice.id %}" class="row g-2 align-items-end">
             {% csrf_token %}
             <div class="col-12 col-md-8">
-              <label class="form-label small text-muted mb-1">Sign invoice (type name)</label>
-              {{ signature_form.name }}
-              <div class="text-danger small">{{ signature_form.name.errors }}</div>
+              <label class="form-label small text-muted mb-1">Approved by (from Shift Identity)</label>
+              <input type="text" class="form-control" value="{{ signature_form.name.value|default:'' }}" readonly />
+              <input type="hidden" name="name" value="{{ signature_form.name.value|default:'' }}" />
             </div>
             <div class="col-12 col-md-4">
-              <button type="submit" class="btn btn-outline-primary btn-sm w-100">Sign</button>
+              <button type="submit" class="btn btn-outline-primary btn-sm w-100">Approve</button>
             </div>
           </form>
           {% if invoice.signed_by_name %}
-            <div class="small text-muted mt-2">Signed by <span class="fw-semibold">{{ invoice.signed_by_name }}</span>{% if invoice.signed_at %} at {{ invoice.signed_at|date:"Y-m-d H:i" }}{% endif %}</div>
+            <div class="small text-muted mt-2">Approved by <span class="fw-semibold">{{ invoice.signed_by_name }}</span>{% if invoice.signed_at %} at {{ invoice.signed_at|date:"Y-m-d H:i" }}{% endif %}</div>
           {% endif %}
         </div>
       </div>

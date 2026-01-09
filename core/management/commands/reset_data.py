@@ -22,6 +22,65 @@ class Command(BaseCommand):
 			help="Also delete all uploaded files under MEDIA_ROOT.",
 		)
 		parser.add_argument(
+			"--seed",
+			action="store_true",
+			help="Also create fresh demo records after reset (admin, quotation, invoice).",
+		)
+		parser.add_argument(
+			"--seed-clients",
+			type=int,
+			default=5,
+			help="Number of demo clients to create when using --seed (default: 5).",
+		)
+		parser.add_argument(
+			"--seed-quotations-per-client",
+			type=int,
+			default=2,
+			help="Quotations per client when using --seed (default: 2).",
+		)
+		parser.add_argument(
+			"--seed-invoices-per-client",
+			type=int,
+			default=2,
+			help="Invoices per client when using --seed (default: 2).",
+		)
+		parser.add_argument(
+			"--seed-payments-per-invoice",
+			type=int,
+			default=1,
+			help="Payments per invoice when using --seed (default: 1).",
+		)
+		parser.add_argument(
+			"--seed-appointments-per-client",
+			type=int,
+			default=1,
+			help="Appointments per client when using --seed (default: 1).",
+		)
+		parser.add_argument(
+			"--seed-documents-per-invoice",
+			type=int,
+			default=1,
+			help="Documents per invoice when using --seed (default: 1).",
+		)
+		parser.add_argument(
+			"--seed-documents-per-payment",
+			type=int,
+			default=1,
+			help="Documents per payment when using --seed (default: 1).",
+		)
+		parser.add_argument(
+			"--seed-admin-email",
+			type=str,
+			default="admin@jambas.local",
+			help="Admin email when using --seed.",
+		)
+		parser.add_argument(
+			"--seed-admin-password",
+			type=str,
+			default="Admin12345!",
+			help="Admin password when using --seed.",
+		)
+		parser.add_argument(
 			"--no-backup",
 			action="store_true",
 			help="Skip backing up the SQLite DB file before deleting it.",
@@ -29,6 +88,16 @@ class Command(BaseCommand):
 
 	def handle(self, *args, **options):
 		include_media: bool = bool(options.get("include_media"))
+		seed: bool = bool(options.get("seed"))
+		seed_clients: int = int(options.get("seed_clients") or 5)
+		seed_quotations_per_client: int = int(options.get("seed_quotations_per_client") or 2)
+		seed_invoices_per_client: int = int(options.get("seed_invoices_per_client") or 2)
+		seed_payments_per_invoice: int = int(options.get("seed_payments_per_invoice") or 1)
+		seed_appointments_per_client: int = int(options.get("seed_appointments_per_client") or 1)
+		seed_documents_per_invoice: int = int(options.get("seed_documents_per_invoice") or 1)
+		seed_documents_per_payment: int = int(options.get("seed_documents_per_payment") or 1)
+		seed_admin_email: str = str(options.get("seed_admin_email") or "admin@jambas.local")
+		seed_admin_password: str = str(options.get("seed_admin_password") or "Admin12345!")
 		no_backup: bool = bool(options.get("no_backup"))
 
 		engine = settings.DATABASES.get("default", {}).get("ENGINE", "")
@@ -114,4 +183,20 @@ class Command(BaseCommand):
 						self.stdout.write(self.style.WARNING(f"MEDIA_ROOT does not exist: {media_root}"))
 
 		self.stdout.write(self.style.SUCCESS("Data reset complete."))
-		self.stdout.write("Next: create an admin user with `manage.py createsuperuser`.")
+		if seed:
+			self.stdout.write("Seeding demo data...")
+			call_command(
+				"seed_demo",
+				admin_email=seed_admin_email,
+				admin_password=seed_admin_password,
+				clients=seed_clients,
+				quotations_per_client=seed_quotations_per_client,
+				invoices_per_client=seed_invoices_per_client,
+				payments_per_invoice=seed_payments_per_invoice,
+				appointments_per_client=seed_appointments_per_client,
+				documents_per_invoice=seed_documents_per_invoice,
+				documents_per_payment=seed_documents_per_payment,
+				verbosity=1,
+			)
+		else:
+			self.stdout.write("Next: create an admin user with `manage.py createsuperuser`.")

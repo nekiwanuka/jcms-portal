@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #0d6efd; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9f9f9; }
+        .footer { background: #f1f1f1; padding: 10px; text-align: center; font-size: 12px; color: #666; }
+        .appointment-info { background: white; padding: 15px; margin: 15px 0; border-left: 4px solid #0d6efd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Jambas Imaging - Appointment Reminder</h1>
+        </div>
+
+        <div class="content">
+            <p>Dear {{ appointment.client.name }},</p>
+
+            <p>This is a friendly reminder about your upcoming appointment with Jambas Imaging.</p>
+
+            <div class="appointment-info">
+                <h3>{{ appointment.get_appointment_type_display }}</h3>
+                <p><strong>Date:</strong> {{ appointment.scheduled_for|date:"l, F j, Y" }}</p>
+                <p><strong>Time:</strong> {{ appointment.scheduled_for|time:"H:i" }}</p>
+                {% if appointment.meeting_location %}
+                <p><strong>Location:</strong> {{ appointment.meeting_location }}</p>
+                {% endif %}
+                {% if appointment.meeting_mode == 'google_meet' and appointment.meeting_link %}
+                <p><strong>Meeting Link:</strong> <a href="{{ appointment.meeting_link }}">{{ appointment.meeting_link }}</a></p>
+                {% endif %}
+                {% if appointment.notes %}
+                <p><strong>Notes:</strong> {{ appointment.notes }}</p>
+                {% endif %}
+            </div>
+
+            <p>Please arrive 10-15 minutes early for your appointment. If you need to reschedule or have any questions, please contact us immediately.</p>
+
+            <p>We look forward to seeing you tomorrow!</p>
+
+            <p>Regards,<br>
+            Jambas Imaging Team</p>
+        </div>
+
+        <div class="footer">
+            <p>This is an automated reminder from Jambas Imaging Business Management Portal.<br>
+            Please do not reply to this email.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,31 @@
+Jambas Imaging - Document Expiry Alert
+
+Dear User,
+
+DOCUMENT EXPIRING SOON
+The following document will expire in {{ days_until_expiry }} days.
+
+Document Details:
+- Title: {{ document.title }}
+- Client: {{ document.client.name }}
+- Document Type: {{ document.get_doc_type_display }}
+- Expiry Date: {{ expiry_date|date:"F j, Y" }}
+- Days Until Expiry: {{ days_until_expiry }}
+{% if document.notes %}
+- Notes: {{ document.notes }}
+{% endif %}
+
+Please take appropriate action:
+- Review the document and determine if renewal is needed
+- Update the expiry date if the document has been renewed
+- Notify relevant stakeholders
+- Replace the document if necessary
+
+You can access the document in the Document Archive section of the portal.
+
+Regards,
+Jambas Business Management Portal
+
+---
+This is an automated notification from Jambas Imaging Business Management Portal.
+Please do not reply to this email.

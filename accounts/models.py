@@ -33,6 +33,7 @@ class UserManager(BaseUserManager):
 class User(AbstractBaseUser, PermissionsMixin):
 	class Role(models.TextChoices):
 		ADMIN = "admin", "Admin"
+		MANAGING_DIRECTOR = "managing_director", "Managing Director"
 		MANAGER = "manager", "Manager"
 		SALES = "sales", "Sales Staff"
 		STORE = "store", "Store Manager"

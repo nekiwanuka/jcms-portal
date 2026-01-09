@@ -11,6 +11,7 @@ urlpatterns = [
     path("logout/", views.logout_view, name="logout"),
     path("otp/", views.otp_verify_view, name="otp_verify"),
     path("otp/resend/", views.otp_resend_view, name="otp_resend"),
+	path("shift/", views.shift_identity_view, name="shift_identity"),
 
     path(
         "password-reset/",

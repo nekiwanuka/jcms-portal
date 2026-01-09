@@ -160,3 +160,99 @@ def send_document(request, doc_id: int):
 		messages.error(request, "Failed to send document email. Check email settings.")
 
 	return redirect("documents_archive")
+
+
+@login_required
+def approve_document(request, doc_id: int):
+	"""Approve a document in the approval workflow."""
+	if request.method != "POST":
+		return redirect("documents_archive")
+
+	doc = get_object_or_404(Document.objects.select_related("client"), pk=doc_id)
+	notes = request.POST.get("approval_notes", "").strip()
+
+	try:
+		doc.approve(request.user, notes)
+		messages.success(request, f"Document '{doc.title}' has been approved.")
+	except Exception as e:
+		messages.error(request, f"Failed to approve document: {str(e)}")
+
+	return redirect("documents_archive")
+
+
+@login_required
+def reject_document(request, doc_id: int):
+	"""Reject a document in the approval workflow."""
+	if request.method != "POST":
+		return redirect("documents_archive")
+
+	doc = get_object_or_404(Document.objects.select_related("client"), pk=doc_id)
+	notes = request.POST.get("approval_notes", "").strip()
+
+	if not notes:
+		messages.error(request, "Please provide a reason for rejection.")
+		return redirect("documents_archive")
+
+	try:
+		doc.reject(request.user, notes)
+		messages.success(request, f"Document '{doc.title}' has been rejected.")
+	except Exception as e:
+		messages.error(request, f"Failed to reject document: {str(e)}")
+
+	return redirect("documents_archive")
+
+
+@login_required
+def sign_document(request, doc_id: int):
+	"""Add digital signature to a document."""
+	if request.method != "POST":
+		return redirect("documents_archive")
+
+	doc = get_object_or_404(Document.objects.select_related("client"), pk=doc_id)
+	signature_data = request.POST.get("signature_data")
+
+	if not signature_data:
+		messages.error(request, "Signature data is required.")
+		return redirect("documents_archive")
+
+	try:
+		doc.add_digital_signature(signature_data)
+		messages.success(request, f"Document '{doc.title}' has been digitally signed.")
+	except Exception as e:
+		messages.error(request, f"Failed to sign document: {str(e)}")
+
+	return redirect("documents_archive")
+
+
+@login_required
+def remove_signature(request, doc_id: int):
+	"""Remove digital signature from a document."""
+	if request.method != "POST":
+		return redirect("documents_archive")
+
+	doc = get_object_or_404(Document.objects.select_related("client"), pk=doc_id)
+
+	try:
+		doc.remove_digital_signature()
+		messages.success(request, f"Digital signature removed from '{doc.title}'.")
+	except Exception as e:
+		messages.error(request, f"Failed to remove signature: {str(e)}")
+
+	return redirect("documents_archive")
+
+
+@login_required
+def document_verification_status(request, doc_id: int):
+	"""View detailed verification status of a document."""
+	doc = get_object_or_404(
+		Document.objects.select_related(
+			"client", "uploaded_by", "rejected_by"
+		).prefetch_related("approved_by"),
+		pk=doc_id
+	)
+
+	context = {
+		"document": doc,
+		"approved_users": doc.approved_by.all(),
+	}
+	return render(request, "documents/verification_status.html", context)

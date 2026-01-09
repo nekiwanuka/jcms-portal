@@ -1,0 +1,538 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Global Search - {{ query }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <!-- Page Header -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <h1 class="h3 mb-1">
+            <i class="bi bi-search me-2"></i>Global Search
+          </h1>
+          {% if query %}
+            <p class="text-muted mb-0">Search results for "<strong>{{ query }}</strong>"</p>
+          {% else %}
+            <p class="text-muted mb-0">Enter a search term to find results across all modules</p>
+          {% endif %}
+        </div>
+        <div class="d-flex gap-2">
+          <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-house-door"></i> Dashboard
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search Form -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <form method="get" class="d-flex gap-2">
+            <div class="input-group flex-grow-1">
+              <input type="text" name="q" class="form-control form-control-lg"
+                     placeholder="Search clients, invoices, receipts, quotations, appointments, services, inventory, expenses, documents, sales, reports..."
+                     value="{{ query }}" required>
+              <button class="btn btn-primary" type="submit">
+                <i class="bi bi-search"></i> Search
+              </button>
+            </div>
+            {% if query %}
+              <a href="{% url 'global_search' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-x-circle"></i> Clear
+              </a>
+            {% endif %}
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if query %}
+    <!-- Results Summary -->
+    <div class="row mb-4">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <h5 class="mb-0">
+                <i class="bi bi-bar-chart me-2"></i>Search Results
+              </h5>
+              <span class="badge bg-primary fs-6">{{ total_results }} results found</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Sections -->
+    <div class="row">
+      <!-- Clients -->
+      {% if results.clients %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-people me-2 text-primary"></i>
+                Clients ({{ results.clients|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                {% for client in results.clients %}
+                  <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card h-100 border">
+                      <div class="card-body">
+                        <h6 class="card-title">
+                          <a href="{% url 'client_history' client.id %}" class="text-decoration-none">
+                            {{ client.name }}
+                          </a>
+                        </h6>
+                        <p class="card-text small text-muted mb-2">
+                          {% if client.email %}{{ client.email }}{% endif %}
+                          {% if client.phone %} • {{ client.phone }}{% endif %}
+                        </p>
+                        {% if client.company %}
+                          <p class="card-text small mb-0">
+                            <strong>Company:</strong> {{ client.company }}
+                          </p>
+                        {% endif %}
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Invoices -->
+      {% if results.invoices %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-receipt me-2 text-success"></i>
+                Invoices ({{ results.invoices|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>Invoice #</th>
+                      <th>Client</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Date</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for invoice in results.invoices %}
+                      <tr>
+                        <td>
+                          <a href="{% url 'invoice_detail' invoice.id %}" class="text-decoration-none">
+                            {{ invoice.number }}
+                          </a>
+                        </td>
+                        <td>{{ invoice.client.company_name|default:invoice.client.full_name }}</td>
+                        <td>{{ invoice.total|floatformat:2 }}</td>
+                        <td>
+                          <span class="badge bg-secondary">{{ invoice.get_status_display|default:invoice.status }}</span>
+                        </td>
+                        <td>{{ invoice.created_at|date:"M d, Y" }}</td>
+                        <td>
+                          <a href="{% url 'invoice_detail' invoice.id %}" class="btn btn-sm btn-outline-primary">
+                            View
+                          </a>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Receipts -->
+      {% if results.receipts %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-receipt-cutoff me-2 text-info"></i>
+                Receipts ({{ results.receipts|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>Receipt #</th>
+                      <th>Client</th>
+                      <th>Amount</th>
+                      <th>Date</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for receipt in results.receipts %}
+                      <tr>
+                        <td>{{ receipt.receipt_number }}</td>
+                        <td>{{ receipt.client.name }}</td>
+                        <td>{{ receipt.amount|floatformat:2 }}</td>
+                        <td>{{ receipt.created_at|date:"M d, Y" }}</td>
+                        <td>
+                          <a href="#" class="btn btn-sm btn-outline-primary">View</a>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Quotations -->
+      {% if results.quotations %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-file-earmark-text me-2 text-warning"></i>
+                Quotations ({{ results.quotations|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>Quotation #</th>
+                      <th>Client</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Date</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for quotation in results.quotations %}
+                      <tr>
+                        <td>
+                          <a href="{% url 'quotation_detail' quotation.id %}" class="text-decoration-none">
+                            {{ quotation.number }}
+                          </a>
+                        </td>
+                        <td>{{ quotation.client.company_name|default:quotation.client.full_name }}</td>
+                        <td>{{ quotation.total|floatformat:2 }}</td>
+                        <td>
+                          <span class="badge {{ quotation.badge_class|default:'text-bg-secondary' }}">{{ quotation.get_status_display|default:quotation.status }}</span>
+                        </td>
+                        <td>{{ quotation.created_at|date:"M d, Y" }}</td>
+                        <td>
+                          <a href="{% url 'quotation_detail' quotation.id %}" class="btn btn-sm btn-outline-primary">View</a>
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Appointments -->
+      {% if results.appointments %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-calendar-event me-2 text-danger"></i>
+                Appointments ({{ results.appointments|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                {% for appointment in results.appointments %}
+                  <div class="col-md-6 mb-3">
+                    <div class="card h-100 border">
+                      <div class="card-body">
+                    <h6 class="card-title">{{ appointment.get_appointment_type_display|default:appointment.appointment_type }}</h6>
+                        <p class="card-text small text-muted mb-2">
+                      {{ appointment.scheduled_for|date:"M d, Y" }} at {{ appointment.scheduled_for|time:"H:i" }}
+                        </p>
+                        {% if appointment.client %}
+                          <p class="card-text small mb-2">
+                      <strong>Client:</strong> {{ appointment.client.company_name|default:appointment.client.full_name }}
+                          </p>
+                        {% endif %}
+                    {% if appointment.notes %}
+                      <p class="card-text small mb-2">{{ appointment.notes|truncatechars:100 }}</p>
+                    {% endif %}
+                    <p class="card-text small mb-0">
+                      <strong>Status:</strong> {{ appointment.get_status_display|default:appointment.status }}
+                    </p>
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Services -->
+      {% if results.services %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-tools me-2 text-secondary"></i>
+                Services ({{ results.services|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                {% for service in results.services %}
+                  <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card h-100 border">
+                      <div class="card-body">
+                        <h6 class="card-title">{{ service.name }}</h6>
+                        {% if service.category %}
+                          <p class="card-text small text-muted mb-2">{{ service.category }}</p>
+                        {% endif %}
+                        {% if service.description %}
+                          <p class="card-text small mb-0">{{ service.description|truncatechars:100 }}</p>
+                        {% endif %}
+                        <p class="card-text small mb-0">
+                          <strong>Price:</strong> {{ service.unit_price|floatformat:2 }}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Inventory -->
+      {% if results.inventory %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-box-seam me-2 text-dark"></i>
+                Inventory ({{ results.inventory|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>SKU</th>
+                      <th>Category</th>
+                      <th>Stock</th>
+                      <th>Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in results.inventory %}
+                      <tr>
+                        <td>{{ item.name }}</td>
+                        <td>{{ item.sku }}</td>
+                        <td>{{ item.category }}</td>
+                        <td>{{ item.stock_quantity }}</td>
+                        <td>{{ item.unit_price|floatformat:2 }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Expenses -->
+      {% if results.expenses %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-cash-stack me-2 text-danger"></i>
+                Expenses ({{ results.expenses|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>Description</th>
+                      <th>Category</th>
+                      <th>Amount</th>
+                      <th>Reference</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for expense in results.expenses %}
+                      <tr>
+                        <td>{{ expense.description }}</td>
+                        <td>{{ expense.category }}</td>
+                        <td>{{ expense.amount|floatformat:2 }}</td>
+                        <td>{{ expense.reference }}</td>
+                        <td>{{ expense.expense_date|date:"M d, Y" }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Documents -->
+      {% if results.documents %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-file-earmark me-2 text-info"></i>
+                Documents ({{ results.documents|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                {% for document in results.documents %}
+                  <div class="col-md-6 mb-3">
+                    <div class="card h-100 border">
+                      <div class="card-body">
+                        <h6 class="card-title">{{ document.title }}</h6>
+                          <p class="card-text small text-muted mb-2">{{ document.doc_type_label|default:document.doc_type }}</p>
+                          {% if document.notes %}
+                            <p class="card-text small mb-0">{{ document.notes|truncatechars:100 }}</p>
+                        {% endif %}
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Sales -->
+      {% if results.sales %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-graph-up me-2 text-success"></i>
+                Sales ({{ results.sales|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>Description</th>
+                      <th>Client</th>
+                      <th>Product</th>
+                      <th>Quantity</th>
+                      <th>Total</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for sale in results.sales %}
+                      <tr>
+                        <td>{{ sale.description }}</td>
+                        <td>{{ sale.client.name }}</td>
+                        <td>{{ sale.product.name }}</td>
+                        <td>{{ sale.quantity }}</td>
+                        <td>{{ sale.total_amount|floatformat:2 }}</td>
+                        <td>{{ sale.created_at|date:"M d, Y" }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Reports -->
+      {% if results.reports %}
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header bg-light">
+              <h5 class="mb-0">
+                <i class="bi bi-bar-chart me-2 text-primary"></i>
+                Reports ({{ results.reports|length }})
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                {% for report in results.reports %}
+                  <div class="col-md-6 mb-3">
+                    <div class="card h-100 border">
+                      <div class="card-body">
+                        <h6 class="card-title">Profit Record: {{ report.invoice.number }}</h6>
+                        <p class="card-text small text-muted mb-2">
+                          {{ report.invoice.client.company_name|default:report.invoice.client.full_name }}
+                        </p>
+                        <p class="card-text small mb-0">
+                          <strong>Product Profit:</strong> {{ report.product_profit_total|floatformat:2 }} &nbsp;|
+                          <strong>Service Profit:</strong> {{ report.service_profit_total|floatformat:2 }}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- No Results -->
+      {% if total_results == 0 %}
+        <div class="col-12">
+          <div class="card">
+            <div class="card-body text-center py-5">
+              <i class="bi bi-search display-1 text-muted mb-3"></i>
+              <h4 class="text-muted">No results found</h4>
+              <p class="text-muted mb-0">Try adjusting your search terms or search for something else.</p>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

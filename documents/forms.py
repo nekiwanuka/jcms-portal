@@ -6,9 +6,12 @@ from .models import Document
 class DocumentForm(forms.ModelForm):
 	class Meta:
 		model = Document
-		exclude = ["uploaded_by", "uploaded_at", "created_at", "related_invoice", "related_payment"]
+		exclude = ["uploaded_by", "uploaded_at", "created_at", "related_invoice", "related_payment", "approved_by", "rejected_by", "approved_at", "rejected_at", "is_signed", "signature_data"]
 		widgets = {
 			"notes": forms.Textarea(attrs={"rows": 3}),
+			"approval_notes": forms.Textarea(attrs={"rows": 2}),
+			"expiry_date": forms.DateInput(attrs={"type": "date"}),
+			"template_fields": forms.HiddenInput(),
 		}
 
 	def __init__(self, *args, **kwargs):

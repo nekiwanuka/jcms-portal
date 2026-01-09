@@ -9,7 +9,7 @@
     </p>
     <p>
       <strong>Prepared by:</strong> {{ invoice.prepared_by_name|default:invoice.created_by.email|default:"-" }}<br />
-      <strong>Signed by:</strong> {{ invoice.signed_by_name|default:"-" }}
+      <strong>Approved by:</strong> {{ invoice.signed_by_name|default:"-" }}
     </p>
     <p>Thank you,<br />Jambas Imaging</p>
   </body>

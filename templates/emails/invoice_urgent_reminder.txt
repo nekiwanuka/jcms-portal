@@ -1,0 +1,29 @@
+Jambas Imaging - URGENT Invoice Payment Due
+
+Dear {{ invoice.client.name }},
+
+URGENT PAYMENT REQUIRED
+Invoice {{ invoice.invoice_number }} is due in {{ days_until_due }} day{{ days_until_due|pluralize }}.
+
+Invoice Details:
+- Invoice Number: {{ invoice.invoice_number }}
+- Amount Due: UGX {{ invoice.total_amount|floatformat:2 }}
+- Due Date: {{ invoice.due_date|date:"F j, Y" }}
+- Days Until Due: {{ days_until_due }}
+{% if invoice.description %}
+- Description: {{ invoice.description }}
+{% endif %}
+
+IMMEDIATE ACTION REQUIRED:
+- Please arrange payment immediately to avoid late fees
+- Contact us if you have already made payment
+- Call us at +256 200 902 849 if you need to discuss payment terms
+
+Payment can be made via bank transfer, mobile money, or in person at our offices.
+
+Regards,
+Jambas Imaging Billing Department
+
+---
+This is an automated urgent payment reminder from Jambas Imaging Business Management Portal.
+Please do not reply to this email.

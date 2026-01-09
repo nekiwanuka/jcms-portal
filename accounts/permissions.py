@@ -20,6 +20,9 @@ class RolePermission(BasePermission):
             return True
 
         role = getattr(user, "role", None)
+        # Managing Director has full portal-level permissions (API side).
+        if role == "managing_director":
+            return True
         if request.method in SAFE_METHODS:
             return role in self.allow_read or role in self.allow_write
         return role in self.allow_write

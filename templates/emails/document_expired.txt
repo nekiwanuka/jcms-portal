@@ -1,0 +1,32 @@
+Jambas Imaging - Document Expired
+
+Dear User,
+
+DOCUMENT HAS EXPIRED
+The following document has expired {{ days_expired }} days ago.
+
+Document Details:
+- Title: {{ document.title }}
+- Client: {{ document.client.name }}
+- Document Type: {{ document.get_doc_type_display }}
+- Expiry Date: {{ expiry_date|date:"F j, Y" }}
+- Days Since Expiry: {{ days_expired }}
+{% if document.notes %}
+- Notes: {{ document.notes }}
+{% endif %}
+
+IMMEDIATE ACTION REQUIRED:
+- Review the document and assess the impact of expiry
+- Renew or replace the expired document
+- Update the document record with new expiry information
+- Notify all relevant stakeholders
+- Check if any processes or services are affected
+
+You can access the document in the Document Archive section of the portal.
+
+Regards,
+Jambas Business Management Portal
+
+---
+This is an automated notification from Jambas Imaging Business Management Portal.
+Please do not reply to this email.

@@ -12,6 +12,18 @@ class OtpVerifyForm(forms.Form):
     code = forms.CharField(min_length=4, max_length=10)
 
 
+class ShiftIdentityForm(forms.Form):
+    prepared_by_name = forms.CharField(max_length=120, label="Prepared by")
+    issued_by_name = forms.CharField(max_length=120, label="Issued by")
+    signed_by_name = forms.CharField(max_length=120, label="Approved by")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["prepared_by_name"].widget.attrs.setdefault("class", "form-control")
+        self.fields["issued_by_name"].widget.attrs.setdefault("class", "form-control")
+        self.fields["signed_by_name"].widget.attrs.setdefault("class", "form-control")
+
+
 User = get_user_model()
 
 

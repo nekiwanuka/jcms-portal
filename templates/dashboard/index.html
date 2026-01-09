@@ -1,6 +1,38 @@
 {% extends 'base.html' %}
 
-{% block title %}Dashboard | Jambas Imaging{% endblock %}
+{% block extra_css %}
+<style>
+  /* Mobile responsive chart containers */
+  @media (max-width: 768px) {
+    .chart-container {
+      height: 250px !important;
+    }
+  }
+
+  @media (max-width: 576px) {
+    .chart-container {
+      height: 200px !important;
+    }
+
+    /* Mobile dashboard cards */
+    .card-body .d-flex {
+      flex-direction: column;
+      text-align: center;
+    }
+
+    .card-body .d-flex .fs-2 {
+      align-self: center;
+      margin-bottom: 1rem;
+    }
+
+    /* Mobile quick actions */
+    .d-flex.flex-wrap.gap-2 .btn {
+      flex: 1 1 100%;
+      margin-bottom: 0.5rem;
+    }
+  }
+</style>
+{% endblock %}
 
 {% block content %}
   <!-- Dashboard header -->
@@ -25,7 +57,36 @@
           <a class="btn btn-primary btn-sm" href="{% url 'add_quotation' %}"><i class="bi bi-plus-circle"></i> New Quotation</a>
           <a class="btn btn-outline-primary btn-sm" href="{% url 'receipts' %}"><i class="bi bi-receipt"></i> Receipts</a>
           <a class="btn btn-outline-primary btn-sm" href="{% url 'upload_document' %}"><i class="bi bi-upload"></i> Upload Document</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'accounts:shift_identity' %}"><i class="bi bi-person-badge"></i> Shift Identity</a>
           <a class="btn btn-outline-secondary btn-sm" href="{% url 'documents_archive' %}"><i class="bi bi-folder2-open"></i> Documents</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts Section -->
+  <div class="row g-3 mb-4">
+    <div class="col-12 col-lg-8">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white">
+          <div class="fw-semibold">Revenue Overview</div>
+        </div>
+        <div class="card-body">
+          <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
+            <canvas id="revenueChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-4">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white">
+          <div class="fw-semibold">Monthly Summary</div>
+        </div>
+        <div class="card-body">
+          <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
+            <canvas id="monthlyChart"></canvas>
+          </div>
         </div>
       </div>
     </div>
@@ -350,4 +411,73 @@
       </div>
     </div>
   </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Sample data for charts - in production, this would come from the backend
+const revenueData = {
+  labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+  datasets: [{
+    label: 'Revenue',
+    data: [12000, 19000, 15000, 25000, 22000, 30000],
+    borderColor: '#0d6efd',
+    backgroundColor: 'rgba(13, 110, 253, 0.1)',
+    tension: 0.4
+  }]
+};
+
+const monthlyData = {
+  labels: ['Invoices', 'Payments', 'Expenses', 'Profit'],
+  datasets: [{
+    data: [45, 35, 15, 5],
+    backgroundColor: [
+      '#0d6efd',
+      '#198754',
+      '#dc3545',
+      '#ffc107'
+    ]
+  }]
+};
+
+// Revenue Chart
+const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+new Chart(revenueCtx, {
+  type: 'line',
+  data: revenueData,
+  options: {
+    responsive: true,
+    plugins: {
+      legend: {
+        display: false
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: {
+          callback: function(value) {
+            return 'UGX ' + value.toLocaleString();
+          }
+        }
+      }
+    }
+  }
+});
+
+// Monthly Summary Chart
+const monthlyCtx = document.getElementById('monthlyChart').getContext('2d');
+new Chart(monthlyCtx, {
+  type: 'doughnut',
+  data: monthlyData,
+  options: {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'bottom'
+      }
+    }
+  }
+});
+</script>
 {% endblock %}

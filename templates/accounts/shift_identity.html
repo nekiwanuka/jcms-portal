@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block title %}Shift Identity | Jambas Imaging{% endblock %}
+
+{% block content %}
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="h4 mb-1">Shift Identity</h1>
+      <div class="text-muted">Set who is preparing, issuing, and approving documents for this shift.</div>
+    </div>
+    <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary btn-sm">Back</a>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="post" class="row g-3">
+        {% csrf_token %}
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">Prepared by</label>
+          <input
+            type="text"
+            name="prepared_by_name"
+            class="form-control"
+            value="{{ form.prepared_by_name.value|default:'' }}"
+            list="nameSuggestions"
+            required
+          />
+          {% if form.prepared_by_name.errors %}<div class="text-danger small">{{ form.prepared_by_name.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">Issued by</label>
+          <input
+            type="text"
+            name="issued_by_name"
+            class="form-control"
+            value="{{ form.issued_by_name.value|default:'' }}"
+            list="nameSuggestions"
+            required
+          />
+          {% if form.issued_by_name.errors %}<div class="text-danger small">{{ form.issued_by_name.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">Approved by</label>
+          <input
+            type="text"
+            name="signed_by_name"
+            class="form-control"
+            value="{{ form.signed_by_name.value|default:'' }}"
+            list="nameSuggestions"
+            required
+          />
+          {% if form.signed_by_name.errors %}<div class="text-danger small">{{ form.signed_by_name.errors }}</div>{% endif %}
+        </div>
+
+        <datalist id="nameSuggestions">
+          {% for n in name_suggestions %}
+            <option value="{{ n }}"></option>
+          {% endfor %}
+        </datalist>
+
+        {% if form.non_field_errors %}
+          <div class="col-12"><div class="alert alert-danger">{{ form.non_field_errors }}</div></div>
+        {% endif %}
+
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

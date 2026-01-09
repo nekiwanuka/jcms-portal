@@ -6,7 +6,7 @@
   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
     <div>
       <h1 class="h4 mb-1">Users</h1>
-      <div class="text-muted">Admin-only user management.</div>
+      <div class="text-muted">User management.</div>
     </div>
     <a href="{% url 'add_user' %}" class="btn btn-primary btn-sm"><i class="bi bi-person-plus"></i> Add User</a>
   </div>
@@ -38,6 +38,12 @@
               </td>
               <td class="text-end">
                 <a class="btn btn-outline-primary btn-sm" href="{% url 'edit_user' u.id %}">Edit</a>
+                {% if request.user.id != u.id %}
+                  <form method="post" action="{% url 'delete_user' u.id %}" class="d-inline" onsubmit="return confirm('Delete this user?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                  </form>
+                {% endif %}
               </td>
             </tr>
           {% empty %}

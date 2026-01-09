@@ -7,7 +7,7 @@ from django.core.mail import send_mail
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
-from .forms import EmailLoginForm, OtpVerifyForm
+from .forms import EmailLoginForm, OtpVerifyForm, ShiftIdentityForm
 from .models import LoginAuditLog, OneTimePassword
 
 
@@ -145,6 +145,12 @@ def otp_verify_view(request):
 			otp.verified_at = timezone.now()
 			otp.save(update_fields=["verified_at"])
 			request.session["otp_verified"] = True
+			if not (
+				request.session.get("prepared_by_name")
+				and request.session.get("issued_by_name")
+				and request.session.get("signed_by_name")
+			):
+				return redirect("accounts:shift_identity")
 			return redirect("dashboard")
 
 		messages.error(request, "Invalid OTP")
@@ -177,3 +183,70 @@ def otp_resend_view(request):
 		messages.error(request, "Unable to send OTP email. Please contact support.")
 
 	return redirect("accounts:otp_verify")
+
+
+def _collect_name_suggestions() -> list[str]:
+	"""Return a small list of existing real-name suggestions."""
+	from django.contrib.auth import get_user_model
+	from invoices.models import Invoice
+
+	User = get_user_model()
+	suggestions: set[str] = set()
+	suggestions.add("JAMBAS IMAGING (U) LTD")
+	try:
+		for name in User.objects.exclude(full_name="").values_list("full_name", flat=True).distinct()[:200]:
+			name = (name or "").strip()
+			if name:
+				suggestions.add(name)
+	except Exception:
+		pass
+	try:
+		for name in Invoice.objects.exclude(prepared_by_name="").values_list("prepared_by_name", flat=True).distinct()[:200]:
+			name = (name or "").strip()
+			if name:
+				suggestions.add(name)
+		for name in Invoice.objects.exclude(signed_by_name="").values_list("signed_by_name", flat=True).distinct()[:200]:
+			name = (name or "").strip()
+			if name:
+				suggestions.add(name)
+	except Exception:
+		pass
+	return sorted(suggestions)[:200]
+
+
+def shift_identity_view(request):
+	"""Set Prepared By / Issued By / Approved By for the current shift.
+
+	Stored in session so users don't retype names on every document.
+	"""
+	if not request.user.is_authenticated:
+		return redirect("accounts:login")
+	if request.session.get("otp_verified") is not True:
+		return redirect("accounts:otp_verify")
+
+	initial = {
+		"prepared_by_name": request.session.get("prepared_by_name", ""),
+		"issued_by_name": request.session.get("issued_by_name", "") or request.session.get("prepared_by_name", ""),
+		"signed_by_name": request.session.get("signed_by_name", ""),
+	}
+	form = ShiftIdentityForm(request.POST or None, initial=initial)
+	name_suggestions = _collect_name_suggestions()
+
+	if request.method == "POST" and form.is_valid():
+		prepared = (form.cleaned_data.get("prepared_by_name") or "").strip()
+		issued = (form.cleaned_data.get("issued_by_name") or "").strip()
+		signed = (form.cleaned_data.get("signed_by_name") or "").strip()
+		request.session["prepared_by_name"] = prepared
+		request.session["issued_by_name"] = issued
+		request.session["signed_by_name"] = signed
+		messages.success(request, "Shift identity updated.")
+		return redirect("dashboard")
+
+	return render(
+		request,
+		"accounts/shift_identity.html",
+		{
+			"form": form,
+			"name_suggestions": name_suggestions,
+		},
+	)

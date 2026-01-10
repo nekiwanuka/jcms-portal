@@ -13,35 +13,69 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 try:
-    from dotenv import load_dotenv
+    from dotenv import dotenv_values
 except Exception:  # pragma: no cover
-    load_dotenv = None
+    dotenv_values = None
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-if load_dotenv is not None:
-    load_dotenv(BASE_DIR / ".env")
-    # Local dev overrides (not committed). This lets production keep `.env`
-    # while local machines can use SQLite etc.
-    load_dotenv(BASE_DIR / ".env.local", override=True)
+if dotenv_values is not None:
+    # Load `.env` + `.env.local` without overriding existing environment
+    # variables. This keeps production env vars authoritative, while still
+    # allowing local development defaults.
+    env_from_files: dict[str, str] = {}
+    env_from_files.update({k: v for k, v in dotenv_values(BASE_DIR / ".env").items() if v is not None})
+    env_from_files.update({k: v for k, v in dotenv_values(BASE_DIR / ".env.local").items() if v is not None})
+    for key, value in env_from_files.items():
+        os.environ.setdefault(key, value)
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-insecure-change-me")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
+# Default to safe behaviour (DEBUG off); use `.env.local` for local dev overrides.
+DEBUG = os.getenv("DJANGO_DEBUG", "0") == "1"
 
-ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "dev-insecure-change-me"
+    else:
+        raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set when DEBUG=0")
+
+_allowed_hosts_env = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_env.split(",") if h.strip()]
+
+if not DEBUG and not os.getenv("DJANGO_ALLOWED_HOSTS"):
+    raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must be set when DEBUG=0")
 
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()]
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Security settings (production-hardened defaults)
+SECURE_SSL_REDIRECT = os.getenv("DJANGO_SECURE_SSL_REDIRECT", "1" if not DEBUG else "0") == "1"
+
+SESSION_COOKIE_SECURE = os.getenv("DJANGO_SESSION_COOKIE_SECURE", "1" if not DEBUG else "0") == "1"
+CSRF_COOKIE_SECURE = os.getenv("DJANGO_CSRF_COOKIE_SECURE", "1" if not DEBUG else "0") == "1"
+
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = os.getenv("DJANGO_SESSION_COOKIE_SAMESITE", "Lax")
+CSRF_COOKIE_SAMESITE = os.getenv("DJANGO_CSRF_COOKIE_SAMESITE", "Lax")
+
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = os.getenv("DJANGO_SECURE_REFERRER_POLICY", "same-origin")
+
+SECURE_HSTS_SECONDS = int(os.getenv("DJANGO_SECURE_HSTS_SECONDS", "31536000" if not DEBUG else "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", "0") == "1"
+SECURE_HSTS_PRELOAD = os.getenv("DJANGO_SECURE_HSTS_PRELOAD", "0") == "1"
 
 
 # Application definition
@@ -212,11 +246,16 @@ LOGIN_URL = 'accounts:login'
 LOGIN_REDIRECT_URL = 'dashboard'
 LOGOUT_REDIRECT_URL = 'accounts:login'
 
+_drf_auth_classes = [
+    'rest_framework.authentication.SessionAuthentication',
+]
+
+_enable_basic_auth = os.getenv("DRF_ENABLE_BASIC_AUTH", "1" if DEBUG else "0") == "1"
+if _enable_basic_auth:
+    _drf_auth_classes.append('rest_framework.authentication.BasicAuthentication')
+
 REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.BasicAuthentication',
-    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': _drf_auth_classes,
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],

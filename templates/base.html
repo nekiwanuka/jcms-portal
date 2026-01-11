@@ -58,19 +58,31 @@
         display: flex;
         align-items: center;
         gap: 0.75rem;
-        flex: 1 1 0;
+        flex: 1 1 auto;
         justify-content: flex-start;
         min-width: 0;
         position: relative;
         z-index: 2;
       }
 
+      .app-header .header-left-main {
+        display: flex;
+        align-items: center;
+        gap: 1.90rem;
+        margin-left: 2.90rem;
+        min-width: 0;
+      }
+
+      .app-header .header-left-main .header-search {
+        margin-left: 0.5rem;
+      }
+
       .app-header .header-center {
         flex: 1 1 0;
         display: flex;
         align-items: center;
-        justify-content: center;
-        text-align: center;
+        justify-content: flex-start;
+        text-align: left;
         pointer-events: none;
         min-width: 0;
         z-index: 1;
@@ -100,24 +112,24 @@
       .app-header .company-block {
         display: flex;
         flex-direction: column;
-        align-items: center;
-        text-align: center;
+        align-items: flex-start;
+        text-align: left;
         gap: 0.1rem;
         line-height: 1.1;
       }
 
       .app-header .company-details {
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         opacity: 0.85;
         white-space: nowrap;
-      }
+      } 
 
       .app-header .header-right {
         display: flex;
         align-items: center;
         justify-content: flex-end;
         gap: 1rem;
-        flex: 1 1 0;
+        flex: 0 0 auto;
         min-width: 0;
         position: relative;
         z-index: 2;
@@ -140,8 +152,8 @@
       }
 
       .app-header .user-email {
-        font-weight: 600;
-        font-size: 0.95rem;
+        font-weight: 500;
+        font-size: 0.70rem;
       }
 
       .app-header .user-status {
@@ -235,10 +247,59 @@
         margin-left: 0;
         background: var(--primary-blue);
         color: #ffffff;
-        padding: 1.5rem;
-        text-align: center;
-        font-size: 0.85rem;
+        padding: 1.25rem;
+        text-align: left;
+        font-size: 0.875rem;
         flex-shrink: 0;
+      }
+
+      .app-footer .footer-inner {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      .app-footer .footer-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1rem;
+        align-items: start;
+      }
+
+      .app-footer .footer-col {
+        min-width: 0;
+      }
+
+      @media (min-width: 768px) {
+        .app-footer .footer-col--shift {
+          padding-top: 2.75rem;
+        }
+      }
+
+      .app-footer .footer-heading {
+        font-weight: 700;
+        font-size: 0.9rem;
+        line-height: 1.2;
+        margin-bottom: 0.35rem;
+        opacity: 0.95;
+      }
+
+      .app-footer .footer-text {
+        font-size: 0.825rem;
+        line-height: 1.4;
+        opacity: 0.9;
+      }
+
+      .app-footer .footer-logo {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .app-footer .footer-logo img {
+        height: 40px;
+        width: auto;
+        object-fit: contain;
       }
 
       .has-sidebar .app-footer {
@@ -250,8 +311,21 @@
       }
 
       .app-footer a {
-        color: var(--primary-blue);
-        text-decoration: none;
+        color: rgba(255,255,255,0.95);
+        text-decoration: underline;
+        text-decoration-color: rgba(255,255,255,0.55);
+      }
+
+      .app-footer a:hover {
+        color: #ffffff;
+        text-decoration-color: rgba(255,255,255,0.85);
+      }
+
+      @media (min-width: 768px) {
+        .app-footer .footer-grid {
+          grid-template-columns: 1.3fr 1fr 1fr;
+          gap: 1.25rem;
+        }
       }
 
       /* Mobile toggle */
@@ -495,50 +569,59 @@
   <body class="{% if request.user.is_authenticated %}has-sidebar{% else %}no-sidebar{% endif %}">
     <!-- Fixed Header -->
     <header class="app-header">
-      <button class="sidebar-toggle" id="sidebarToggle">
-        <i class="bi bi-list"></i>
-      </button>
-
+      <!-- LEFT: Navigation + Brand -->
       <div class="header-left">
-        <picture>
-          <source srcset="{% static 'images/jambas-logo-white.svg' %}" type="image/svg+xml" />
-          <img src="{% static 'images/jambas-company-logo.png' %}" alt="Jambas Imaging" class="logo-img" />
-        </picture>
-      </div>
+        <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar">
+          <i class="bi bi-list"></i>
+        </button>
 
-      <div class="header-center">
-        <div class="company-block">
-          <div class="company-name">JAMBAS BUSINESS MANAGEMENT PORTAL</div>
-          <div class="company-details">Tel: +256 200 902 849  |  info@jambasimaging.com</div>
+        <picture class="brand">
+          <source srcset="{% static 'images/jambas-logo-white.svg' %}" type="image/svg+xml" />
+          <img
+            src="{% static 'images/jambas-company-logo.png' %}"
+            alt="Jambas Imaging"
+            class="logo-img"
+          />
+        </picture>
+
+        <div class="header-left-main">
+          <div class="company-block d-none d-md-flex">
+            <div class="company-name">JAMBAS BUSINESS MANAGEMENT PORTAL</div>
+          </div>
+
+          {% if request.user.is_authenticated %}
+            <form class="header-search d-none d-lg-flex" method="get" action="{% url 'global_search' %}">
+              <div class="input-group input-group-sm">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" name="q" class="form-control" placeholder="Search" aria-label="Search" />
+              </div>
+            </form>
+
+            <a class="btn btn-light btn-sm d-lg-none" href="{% url 'global_search' %}" aria-label="Search">
+              <i class="bi bi-search"></i>
+            </a>
+          {% endif %}
         </div>
       </div>
 
+      <!-- RIGHT: User -->
       <div class="header-right">
-        {% if request.user.is_authenticated %}
-          <form class="header-search d-none d-lg-block" method="get" action="{% url 'global_search' %}">
-            <div class="input-group input-group-sm">
-              <span class="input-group-text"><i class="bi bi-search"></i></span>
-              <input type="text" name="q" class="form-control" placeholder="Search" aria-label="Search" />
-            </div>
-          </form>
-
-          <a class="btn btn-light btn-sm d-lg-none" href="{% url 'global_search' %}" aria-label="Search">
-            <i class="bi bi-search"></i>
-          </a>
-        {% endif %}
-
+        <!-- User Section -->
         <div class="user-section">
           {% if request.user.is_authenticated %}
-            <div class="user-info">
+            <div class="user-info d-none d-sm-flex">
               <div class="user-email">{{ request.user.email|default:request.user.get_username }}</div>
-              <div class="user-status"><i class="bi bi-circle-fill text-success" style="font-size: 0.5rem;"></i> Online</div>
+              <div class="user-status"><i class="bi bi-circle-fill text-success"></i> Online</div>
             </div>
+
             <a class="btn btn-light btn-sm" href="{% url 'accounts:logout' %}">
-              <i class="bi bi-box-arrow-right"></i> Logout
+              <i class="bi bi-box-arrow-right"></i>
+              <span class="d-none d-md-inline">Logout</span>
             </a>
           {% else %}
             <a class="btn btn-light btn-sm" href="{% url 'accounts:login' %}">
-              <i class="bi bi-box-arrow-in-right"></i> Login
+              <i class="bi bi-box-arrow-in-right"></i>
+              <span class="d-none d-md-inline">Login</span>
             </a>
           {% endif %}
         </div>
@@ -665,11 +748,30 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <div>
-        JAMBAS IMAGING (U) LTD is a Ugandan-based company providing integrated solutions in printing, branding, IT products, IT support services, safety gears, medical supplies, and stationery.
+      <div class="footer-inner">
+        <div class="footer-grid">
+          <div class="footer-col">
+            <div class="footer-logo">
+              <img src="{% static 'images/jambas-logo-white.svg' %}" alt="Jambas Imaging" />
+            </div>
+            <div class="footer-text">
+              Integrated solutions in printing, branding, IT products, IT support services, safety gears, medical supplies, and stationery.
+            </div>
+          </div>
+
+          <div class="footer-col footer-col--shift">
+            <div class="footer-heading">Contact</div>
+            <div class="footer-text">Tel: +256 200 902 849</div>
+            <div class="footer-text">Email: info@jambasimaging.com</div>
+          </div>
+
+          <div class="footer-col footer-col--shift">
+            <div class="footer-heading">Location</div>
+            <div class="footer-text">F-26, Nasser Road Mall, Kampala – Uganda</div>
+            <div class="footer-text mt-2">System Developed by <a href="https://devtownhosting.com">DEVTOWN TECHNOLOGIES</a></div>
+          </div>
+        </div>
       </div>
-      <div class="mt-2">Tel: +256 200 902 849 | Email: info@jambasimaging.com | Location: F-26, Nasser Road Mall, Kampala – Uganda</div>
-      <div class="mt-1">System Developed by <a href="https://devtownhosting.com" style="color: inherit; text-decoration: underline;">DEVTOWN TECHNOLOGIES</a></div>
     </footer>
 
     <!-- Document preview modal (same-tab popup) -->
@@ -803,5 +905,7 @@
       });
 
     </script>
+
+    {% block extra_js %}{% endblock %}
   </body>
 </html>

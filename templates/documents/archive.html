@@ -5,7 +5,7 @@
 {% block content %}
   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
     <div>
-      <h1 class="h4 mb-1">Document Archive</h1>
+      <h1 class="h6 small mb-1">Document Archive</h1>
       <div class="text-muted">Upload, find, and download company documents.</div>
     </div>
     <a href="{% url 'upload_document' %}" class="btn btn-primary btn-sm"><i class="bi bi-upload"></i> Upload Document</a>
@@ -44,23 +44,25 @@
 
   <div class="card shadow-sm">
     <div class="table-responsive">
-      <table class="table table-striped table-hover mb-0 align-middle">
+      <table class="table table-sm table-striped table-hover mb-0 align-middle">
         <thead class="table-light">
           <tr>
-            <th>Title</th>
-            <th>Type</th>
-            <th>Client</th>
-            <th>Version</th>
-            <th>Verification Status</th>
-            <th>Uploaded</th>
-            <th class="text-end">Actions</th>
+            <th class="text-nowrap">Title</th>
+            <th class="text-nowrap">Type</th>
+            <th class="text-nowrap">Client</th>
+            <th class="text-nowrap">Version</th>
+            <th class="text-nowrap">Verification Status</th>
+            <th class="text-nowrap">Uploaded</th>
+            <th class="text-end text-nowrap">Actions</th>
           </tr>
         </thead>
         <tbody>
           {% for d in documents %}
             <tr>
               <td class="fw-semibold">
-                {{ d.title|default:'(Untitled)' }}
+                <span class="d-inline-block text-truncate align-middle" style="max-width: 320px;">
+                  {{ d.title|default:'(Untitled)' }}
+                </span>
                 {% if d.is_expired %}
                   <span class="badge bg-danger ms-1">Expired</span>
                 {% elif d.expiry_date and d.days_until_expiry <= 30 %}
@@ -73,16 +75,16 @@
                   <i class="bi bi-file-earmark-text text-info ms-1" title="Template"></i>
                 {% endif %}
               </td>
-              <td>{{ d.get_doc_type_display }}</td>
-              <td>{{ d.client }}</td>
-              <td>v{{ d.version }}</td>
-              <td>
+              <td class="small text-nowrap">{{ d.get_doc_type_display }}</td>
+              <td class="small text-nowrap">{{ d.client }}</td>
+              <td class="small text-nowrap">v{{ d.version }}</td>
+              <td class="small text-nowrap">
                 <span class="badge bg-{% if d.verification_status == 'approved' %}success{% elif d.verification_status == 'rejected' %}danger{% elif d.verification_status == 'pending' %}warning{% elif d.verification_status == 'under_review' %}info{% else %}secondary{% endif %}">
                   {{ d.get_verification_status_display }}
                 </span>
               </td>
-              <td>{{ d.uploaded_at|date:'Y-m-d H:i' }}</td>
-              <td class="text-end">
+              <td class="small text-nowrap">{{ d.uploaded_at|date:'Y-m-d H:i' }}</td>
+              <td class="text-end small">
                 <div class="btn-group" role="group">
                   <a class="btn btn-outline-primary btn-sm" href="{% url 'download_document' d.id %}"><i class="bi bi-download"></i></a>
                   <a class="btn btn-outline-secondary btn-sm js-doc-preview" href="{% url 'download_document' d.id %}?inline=1" title="Preview"><i class="bi bi-eye"></i></a>

@@ -65,7 +65,34 @@
     <div class="col-12 col-md-4">
       <div class="card shadow-sm h-100">
         <div class="card-body">
-          <div class="text-muted small">Revenue (Net)</div>
+          <div class="text-muted small">Cash Received (Payments)</div>
+          {% if show_income %}
+            <div class="h4 mb-0">{{ kpis.payments_total|money }}</div>
+            <div class="text-muted small">Cash actually received in the period.</div>
+          {% else %}
+            <div class="text-muted">Restricted</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Refunds (Cash Out)</div>
+          {% if show_income %}
+            <div class="h4 mb-0">{{ kpis.refunds_total|money }}</div>
+          {% else %}
+            <div class="text-muted">Restricted</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Net Cash Revenue (Payments - Refunds)</div>
           {% if show_income %}
             <div class="h4 mb-0">{{ kpis.revenue_total|money }}</div>
           {% else %}
@@ -78,9 +105,23 @@
     <div class="col-12 col-md-4">
       <div class="card shadow-sm h-100">
         <div class="card-body">
-          <div class="text-muted small">Refunds</div>
+          <div class="text-muted small">Invoiced Total (Issued Value)</div>
           {% if show_income %}
-            <div class="h4 mb-0">{{ kpis.refunds_total|money }}</div>
+            <div class="h4 mb-0">{{ kpis.invoiced_total|money }}</div>
+          {% else %}
+            <div class="text-muted">Restricted</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-md-4">
+      <div class="card shadow-sm h-100">
+        <div class="card-body">
+          <div class="text-muted small">Accounts Receivable (Outstanding)</div>
+          {% if show_income %}
+            <div class="h4 mb-0">{{ kpis.outstanding_total|money }}</div>
+            <div class="text-muted small">Expected/pending collections (incl. partial payments).</div>
           {% else %}
             <div class="text-muted">Restricted</div>
           {% endif %}
@@ -157,6 +198,75 @@
             <div class="h4 mb-0">{{ kpis.net_profit|money }}</div>
           {% else %}
             <div class="text-muted">Restricted</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div>
+              <div class="fw-semibold">Collections / Partial Payments Audit</div>
+              <div class="text-muted small">Recent invoices showing total, paid, and outstanding.</div>
+            </div>
+          </div>
+
+          {% if show_income %}
+            <div class="table-responsive mt-2">
+              <table class="table table-sm table-striped mb-0 align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th class="text-nowrap">Invoice</th>
+                    <th class="text-nowrap">Client</th>
+                    <th class="text-nowrap">Status</th>
+                    <th class="text-end text-nowrap">Total</th>
+                    <th class="text-end text-nowrap">Paid</th>
+                    <th class="text-end text-nowrap">Outstanding</th>
+                    <th class="text-nowrap">Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for r in recent_invoice_rows %}
+                    <tr>
+                      <td class="text-nowrap">
+                        {{ r.invoice.number|default:r.invoice.id }}
+                        {% if r.is_partial %}
+                          <span class="badge bg-warning text-dark ms-1">Partial</span>
+                        {% endif %}
+                      </td>
+                      <td class="text-nowrap">{{ r.invoice.client }}</td>
+                      <td class="text-nowrap">{{ r.invoice.get_status_display }}</td>
+                      <td class="text-end text-nowrap">{{ r.total|money }}</td>
+                      <td class="text-end text-nowrap">{{ r.paid|money }}</td>
+                      <td class="text-end text-nowrap">{{ r.outstanding|money }}</td>
+                      <td class="text-nowrap">{{ r.invoice.created_at|date:'Y-m-d H:i' }}</td>
+                    </tr>
+                  {% empty %}
+                    <tr><td colspan="7" class="text-center text-muted py-3">No invoices found.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+      {% if recent_invoice_page and recent_invoice_page.paginator.num_pages > 1 %}
+        <nav class="mt-3" aria-label="Collections pagination">
+        <ul class="pagination pagination-sm mb-0 flex-wrap">
+          <li class="page-item {% if not recent_invoice_page.has_previous %}disabled{% endif %}">
+          <a class="page-link" href="{% if recent_invoice_page.has_previous %}{% url 'reports' %}{{ qs_no_inv_page }}{% if qs_no_inv_page %}&{% else %}?{% endif %}inv_page={{ recent_invoice_page.previous_page_number }}{% else %}#{% endif %}">Previous</a>
+          </li>
+          <li class="page-item disabled">
+          <span class="page-link">Page {{ recent_invoice_page.number }} of {{ recent_invoice_page.paginator.num_pages }}</span>
+          </li>
+          <li class="page-item {% if not recent_invoice_page.has_next %}disabled{% endif %}">
+          <a class="page-link" href="{% if recent_invoice_page.has_next %}{% url 'reports' %}{{ qs_no_inv_page }}{% if qs_no_inv_page %}&{% else %}?{% endif %}inv_page={{ recent_invoice_page.next_page_number }}{% else %}#{% endif %}">Next</a>
+          </li>
+        </ul>
+        </nav>
+      {% endif %}
+          {% else %}
+            <div class="text-muted mt-2">Restricted</div>
           {% endif %}
         </div>
       </div>

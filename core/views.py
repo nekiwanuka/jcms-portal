@@ -17,7 +17,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, A5
+from reportlab.lib.pagesizes import A4, A5, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Flowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from reportlab.pdfbase import pdfmetrics
@@ -298,15 +298,24 @@ def _filter_expenses(request, qs):
 	return qs
 
 
-def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename: str, *, inline: bool = False) -> HttpResponse:
+def _pdf_response(
+	title: str,
+	header: list[str],
+	rows: list[list[str]],
+	filename: str,
+	*,
+	inline: bool = False,
+	landscape_mode: bool = False,
+) -> HttpResponse:
 	"""Generate a simple, reliable PDF table export.
 
 	Uses ReportLab (already in requirements) for cPanel-friendly PDF creation.
 	"""
 	buffer = BytesIO()
+	page_size = landscape(A4) if landscape_mode else A4
 	doc = SimpleDocTemplate(
 		buffer,
-		pagesize=A4,
+		pagesize=page_size,
 		title=title,
 		topMargin=90,
 		bottomMargin=72,
@@ -315,6 +324,26 @@ def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename
 	)
 	styles = getSampleStyleSheet()
 	base_font, base_font_bold = _pdf_setup_fonts(styles)
+	cell_style = ParagraphStyle(
+		"pdf_table_cell",
+		parent=styles["Normal"],
+		fontName=base_font,
+		fontSize=7.5,
+		leading=9,
+		textColor=colors.HexColor("#0f172a"),
+		wordWrap="CJK",
+		splitLongWords=1,
+	)
+	header_cell_style = ParagraphStyle(
+		"pdf_table_header_cell",
+		parent=styles["Normal"],
+		fontName=base_font_bold,
+		fontSize=8.5,
+		leading=10,
+		textColor=colors.white,
+		wordWrap="CJK",
+		splitLongWords=1,
+	)
 	styles.add(
 		ParagraphStyle(
 			"pdf_export_hint",
@@ -337,6 +366,20 @@ def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename
 		if value is None:
 			return ""
 		return str(value)
+
+	def _cell_para(value, *, is_header: bool = False):
+		text = _cell_text(value)
+		# Preserve a visible placeholder for empty cells.
+		if not text:
+			text = "-"
+		# Escape a few characters that might be interpreted as markup.
+		text = (
+			text.replace("&", "&amp;")
+			.replace("<", "&lt;")
+			.replace(">", "&gt;")
+			.replace("\n", "<br/>")
+		)
+		return Paragraph(text, header_cell_style if is_header else cell_style)
 
 	def _looks_numeric(text: str) -> bool:
 		# Accept comma-grouped numbers and decimals.
@@ -368,9 +411,18 @@ def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename
 	weights: list[float] = []
 	for idx, h in enumerate(header):
 		base = min(max_lens[idx], 42)
-		if (h or "").strip().lower() in wide_headers:
+		hn = (h or "").strip().lower()
+		if hn in wide_headers:
 			base *= 1.4
-		weights.append(max(8.0, float(base)))
+		# Explicit tuning for common table exports.
+		# Keep ID compact and give Name extra room so values stay on one line.
+		if hn == "id":
+			base *= 0.7
+		elif hn == "name":
+			base *= 1.2
+		elif hn == "email":
+			base *= 1.15
+		weights.append(max(6.0, float(base)))
 	wsum = sum(weights) or 1.0
 	col_widths = [(w / wsum) * float(doc.width) for w in weights]
 
@@ -406,7 +458,12 @@ def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename
 		if seen >= 5 and (num_like / max(seen, 1)) >= 0.8:
 			numeric_cols.add(idx)
 
-	data = [header] + rows
+	data = [[_cell_para(h, is_header=True) for h in header]]
+	for r in rows:
+		row_cells = []
+		for idx in range(len(header)):
+			row_cells.append(_cell_para(r[idx] if idx < len(r) else ""))
+		data.append(row_cells)
 	table = Table(data, repeatRows=1, colWidths=col_widths)
 	table.setStyle(
 		TableStyle(
@@ -414,14 +471,16 @@ def _pdf_response(title: str, header: list[str], rows: list[list[str]], filename
 				("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0d6efd")),
 				("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
 				("FONTNAME", (0, 0), (-1, 0), base_font_bold),
-				("FONTSIZE", (0, 0), (-1, 0), 10),
+				("FONTSIZE", (0, 0), (-1, 0), 8.5),
+				("FONTNAME", (0, 1), (-1, -1), base_font),
+				("FONTSIZE", (0, 1), (-1, -1), 7.5),
 				("ALIGN", (0, 0), (-1, 0), "LEFT"),
-				("LEFTPADDING", (0, 0), (-1, -1), 6),
-				("RIGHTPADDING", (0, 0), (-1, -1), 6),
-				("TOPPADDING", (0, 0), (-1, -1), 4),
-				("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+				("LEFTPADDING", (0, 0), (-1, -1), 4),
+				("RIGHTPADDING", (0, 0), (-1, -1), 4),
+				("TOPPADDING", (0, 0), (-1, -1), 2.5),
+				("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
 				("GRID", (0, 0), (-1, -1), 0.6, colors.black),
-				("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+				("VALIGN", (0, 0), (-1, -1), "TOP"),
 			]
 		)
 	)
@@ -623,6 +682,7 @@ def export_clients_pdf(request):
 		rows=rows,
 		filename="clients.pdf",
 		inline=extra_inline in {"1", "true", "yes", "on"},
+		landscape_mode=True,
 	)
 
 
@@ -1478,13 +1538,6 @@ def _build_quotation_pdf_bytes(quote, *, proforma: bool = False, issued_by: str 
 	data = [["Item", "Description", "Qty", "Unit Price", "Amount"]] + rows
 	item_w = 35 * mm
 	qty_w = 25 * mm
-	unit_w = 27 * mm
-	amt_w = 27 * mm
-	# Make the table span the full available width to keep vertical grid lines
-	# perfectly aligned with other right-aligned tables.
-	desc_w = max(40 * mm, float(doc.width) - (item_w + qty_w + unit_w + amt_w))
-	item_col_widths = [item_w, desc_w, qty_w, unit_w, amt_w]
-	table = Table(data, repeatRows=1, colWidths=item_col_widths)
 	table.setStyle(
 		TableStyle(
 			[
@@ -3963,6 +4016,7 @@ def reports_view(request):
 	from appointments.models import Appointment
 	from clients.models import Client
 	from core.models import Branch
+	from django.core.paginator import Paginator
 	from django.db.models import Sum
 	from inventory.models import Product
 	from invoices.models import Invoice
@@ -4017,6 +4071,7 @@ def reports_view(request):
 	payments_total = payments_qs.aggregate(total=Sum("amount")).get("total") or 0
 	refunds_total = refunds_qs.aggregate(total=Sum("amount")).get("total") or 0
 	revenue_total = (payments_total - refunds_total) if show_income else None
+	payments_total = payments_total if show_income else None
 
 	# Profit is recorded independently when invoices become PAID.
 	service_cost_total = None
@@ -4060,6 +4115,7 @@ def reports_view(request):
 			"clients_active": clients_active,
 			"invoices_total": invoices_total,
 			"invoices_paid": invoices_paid,
+			"payments_total": payments_total,
 			"revenue_total": revenue_total,
 			"refunds_total": refunds_total if show_income else None,
 			"invoiced_total": invoiced_total,
@@ -4074,6 +4130,9 @@ def reports_view(request):
 			"products_low_stock": products_low_stock,
 			"appointments_upcoming": appointments_upcoming,
 		},
+		"recent_invoice_rows": [],
+		"recent_invoice_page": None,
+		"qs_no_inv_page": "",
 		"show_income": show_income,
 		"branches": Branch.objects.filter(is_active=True),
 		"filters": {
@@ -4081,8 +4140,38 @@ def reports_view(request):
 			"from": _get_str(request, "from"),
 			"to": _get_str(request, "to"),
 		},
-		"qs": _current_querystring(request),
+		"qs": "",
 	}
+
+	# Export links and pagination should not carry table page params.
+	context["qs"] = "?" + urlencode(
+		{k: v for k, v in request.GET.items() if v not in (None, "") and k not in {"inv_page"}}
+	) if request.GET else ""
+	context["qs_no_inv_page"] = context["qs"]
+
+	if show_income:
+		inv_page = _get_int(request, "inv_page") or 1
+		recent_invoices_qs = (
+			invoices_qs.select_related("client", "branch")
+			.prefetch_related("payments", "refunds", "items")
+			.order_by("-created_at")
+		)
+		paginator = Paginator(recent_invoices_qs, 25)
+		page_obj = paginator.get_page(inv_page)
+		recent_rows: list[dict] = []
+		for inv in page_obj.object_list:
+			total = inv.total()
+			paid = inv.amount_paid()
+			outstanding = inv.outstanding_balance()
+			recent_rows.append({
+				"invoice": inv,
+				"total": total,
+				"paid": paid,
+				"outstanding": outstanding,
+				"is_partial": paid > Decimal("0.00") and outstanding > Decimal("0.00"),
+			})
+		context["recent_invoice_page"] = page_obj
+		context["recent_invoice_rows"] = recent_rows
 	return render(request, "modules/reports.html", context)
 
 
